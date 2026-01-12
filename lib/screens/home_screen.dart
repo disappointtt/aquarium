@@ -3,10 +3,8 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../main.dart';
-import 'settings_screen.dart';
 
 class Reading {
   final DateTime time;
@@ -26,36 +24,14 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  String _espIp = "192.168.0.105";
-  String _ledState = "unknown";
-  String _temperature = "---";
-  String _humidity = "---";
-  String _status = 'Нажмите "Обновить", чтобы получить статус.';
+  String _ledState = 'unknown';
+  String _temperature = '---';
+  String _humidity = '---';
+  String _status = 'Waiting for data. Pull to refresh.';
   bool _hasError = false;
   bool _dangerTemp = false;
   AquariumPreset _preset = AquariumPreset.day;
   final List<Reading> _history = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSettings();
-  }
-
-  Future<void> _loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _espIp = prefs.getString('esp_ip') ?? "192.168.0.105";
-    });
-  }
-
-  Future<void> _saveSettings(String ip) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('esp_ip', ip);
-    setState(() {
-      _espIp = ip;
-    });
-  }
 
   void _pushHistory(String temp, String hum) {
     if (temp == '---' || hum == '---') return;
@@ -70,8 +46,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _getState() async {
     final appState = AppScope.of(context);
+    final espIp = appState.espIp;
     setState(() {
-      _status = "Получаем данные...";
+      _status = 'Fetching latest readings...';
       _hasError = false;
     });
 
@@ -86,7 +63,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final client = http.Client();
       final response = await client
-          .get(Uri.parse('http://$_espIp/getState'))
+          .get(Uri.parse('http://$espIp/getState'))
           .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
@@ -97,14 +74,14 @@ class _HomeScreenState extends State<HomeScreen> {
         _updateFromResponse(led, temp, hum, isDemo: false);
       } else {
         setState(() {
-          _status = "HTTP ошибка: ${response.statusCode}";
+          _status = 'HTTP error: ${response.statusCode}';
           _hasError = true;
         });
       }
       client.close();
     } catch (e) {
       setState(() {
-        _status = "Ошибка: ${e.toString()}";
+        _status = 'Request error: ${e.toString()}';
         _hasError = true;
       });
     }
@@ -112,10 +89,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _toggleLight() async {
     final appState = AppScope.of(context);
+    final espIp = appState.espIp;
     if (appState.isDemo) {
       setState(() {
         _ledState = _ledState == 'on' ? 'off' : 'on';
-        _status = "Демо: свет переключён";
+        _status = 'Light toggled (demo mode).';
         _hasError = false;
       });
       return;
@@ -124,21 +102,21 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final client = http.Client();
       final response = await client
-          .get(Uri.parse('http://$_espIp/toggle'))
+          .get(Uri.parse('http://$espIp/toggle'))
           .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         _getState();
       } else {
         setState(() {
-          _status = "HTTP ошибка: ${response.statusCode}";
+          _status = 'HTTP error: ${response.statusCode}';
           _hasError = true;
         });
       }
       client.close();
     } catch (e) {
       setState(() {
-        _status = "Ошибка: ${e.toString()}";
+        _status = 'Request error: ${e.toString()}';
         _hasError = true;
       });
     }
@@ -149,7 +127,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _ledState = led;
       _temperature = temp;
       _humidity = hum;
-      _status = isDemo ? "Демо: данные обновлены" : "Данные обновлены.";
+      _status = isDemo ? 'Demo readings updated.' : 'Readings updated.';
       _hasError = false;
       _dangerTemp = _isDangerTemp(temp);
       _pushHistory(temp, hum);
@@ -162,23 +140,14 @@ class _HomeScreenState extends State<HomeScreen> {
     return value < 20 || value > 30;
   }
 
-  void _openSettings() async {
-    final newIp = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const SettingsScreen()),
-    );
-    if (newIp != null && newIp is String) {
-      _saveSettings(newIp);
-    }
-  }
-
   Widget _buildInfoBanner({required IconData icon, required String text, required Color color}) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.18),
-        borderRadius: BorderRadius.circular(14),
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.2)),
       ),
       child: Row(
         children: [
@@ -195,6 +164,24 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _surfaceCard({required Widget child}) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+
   Widget _metricCard({
     required String title,
     required String value,
@@ -202,36 +189,34 @@ class _HomeScreenState extends State<HomeScreen> {
     Color? accent,
   }) {
     final scheme = Theme.of(context).colorScheme;
-    return Card(
+    final accentColor = accent ?? scheme.primary;
+    return _surfaceCard(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            CircleAvatar(
-              backgroundColor: (accent ?? scheme.primary).withOpacity(0.15),
-              foregroundColor: accent ?? scheme.primary,
-              child: Icon(icon),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title,
-                      style: TextStyle(
-                        color: scheme.onSurfaceVariant,
-                        fontSize: 13,
-                      )),
-                  const SizedBox(height: 4),
-                  Text(
-                    value,
-                    style: TextStyle(
-                      color: scheme.onSurface,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
+            Row(
+              children: [
+                Icon(icon, color: accentColor),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: scheme.onSurfaceVariant,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
                   ),
-                ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              value,
+              style: TextStyle(
+                color: scheme.onSurface,
+                fontSize: 24,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ],
@@ -248,15 +233,15 @@ class _HomeScreenState extends State<HomeScreen> {
         onTap: () {
           setState(() {
             _preset = preset;
-            _status = "Режим: $label";
+            _status = 'Preset set to $label.';
           });
         },
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
           decoration: BoxDecoration(
-            color: isActive ? scheme.primary.withOpacity(0.15) : scheme.surfaceVariant.withOpacity(0.5),
-            borderRadius: BorderRadius.circular(16),
+            color: isActive ? scheme.primary.withOpacity(0.12) : scheme.surface,
+            borderRadius: BorderRadius.circular(18),
             border: Border.all(
               color: isActive ? scheme.primary : scheme.outlineVariant,
             ),
@@ -283,7 +268,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final scheme = Theme.of(context).colorScheme;
     if (_history.isEmpty) {
       return Text(
-        'История пока пуста. Обновите данные.',
+        'No history yet. Refresh to collect readings.',
         style: TextStyle(color: scheme.onSurfaceVariant),
       );
     }
@@ -294,7 +279,7 @@ class _HomeScreenState extends State<HomeScreen> {
               dense: true,
               contentPadding: const EdgeInsets.symmetric(horizontal: 0),
               leading: Icon(Icons.timeline, color: scheme.primary),
-              title: Text('${r.temperature} °C | ${r.humidity} %'),
+              title: Text('${r.temperature} C | ${r.humidity} %'),
               subtitle: Text(
                 '${r.time.hour.toString().padLeft(2, '0')}:${r.time.minute.toString().padLeft(2, '0')}',
                 style: TextStyle(color: scheme.onSurfaceVariant),
@@ -309,36 +294,114 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final appState = AppScope.of(context);
-    const greeting = 'Smart Aquarium';
-    final isOnline = !_hasError && _status.toLowerCase().contains('обновл');
+    final isOnline = !_hasError && _temperature != '---';
+    final espIp = appState.espIp;
+    final ledOn = _ledState.toLowerCase() == 'on';
+    final presetLabel = switch (_preset) {
+      AquariumPreset.day => 'Day',
+      AquariumPreset.night => 'Night',
+      AquariumPreset.feeding => 'Feeding',
+    };
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(greeting),
-        actions: [
-          if (appState.isDemo)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6.0),
-              child: Chip(
-                label: const Text('Demo'),
-                backgroundColor: scheme.primary.withOpacity(0.2),
-                labelStyle: TextStyle(color: scheme.primary, fontWeight: FontWeight.w700),
-                visualDensity: VisualDensity.compact,
-              ),
-            ),
-          IconButton(
-            onPressed: _openSettings,
-            icon: const Icon(Icons.settings_rounded),
-          ),
-        ],
-      ),
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _getState,
           child: ListView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(20),
             children: [
-              // Статус соединения
+              Row(
+                children: [
+                  const Spacer(),
+                  Text(
+                    'Aquarium',
+                    style: TextStyle(
+                      color: scheme.onSurface,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (appState.isDemo)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: scheme.primary.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
+                        'Demo',
+                        style: TextStyle(
+                          color: scheme.primary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _surfaceCard(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 130,
+                        height: 150,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(20),
+                          gradient: LinearGradient(
+                            colors: [
+                              scheme.primary.withOpacity(0.4),
+                              scheme.primary.withOpacity(0.1),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                        ),
+                        child: Icon(
+                          Icons.bubble_chart_rounded,
+                          size: 80,
+                          color: scheme.primary,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Tropical Tank',
+                              style: TextStyle(
+                                color: scheme.onSurface,
+                                fontSize: 22,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              'Status: ${ledOn ? "Lights on" : "Lights off"}',
+                              style: TextStyle(
+                                color: scheme.onSurfaceVariant,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Preset: $presetLabel',
+                              style: TextStyle(
+                                color: scheme.onSurfaceVariant,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
               Row(
                 children: [
                   Icon(
@@ -347,7 +410,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    isOnline ? 'Онлайн' : 'Оффлайн/неизвестно',
+                    isOnline ? 'Online' : 'Offline',
                     style: TextStyle(
                       color: isOnline ? Colors.green : Colors.orange,
                       fontWeight: FontWeight.w600,
@@ -355,7 +418,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const Spacer(),
                   Text(
-                    'IP: $_espIp',
+                    'IP: $espIp',
                     style: TextStyle(color: scheme.onSurfaceVariant),
                   ),
                 ],
@@ -370,7 +433,7 @@ class _HomeScreenState extends State<HomeScreen> {
               else if (_dangerTemp)
                 _buildInfoBanner(
                   icon: Icons.thermostat,
-                  text: 'Опасная температура! Сейчас: $_temperature °C',
+                  text: 'Temperature alert: $_temperature C',
                   color: Colors.red,
                 )
               else
@@ -379,43 +442,114 @@ class _HomeScreenState extends State<HomeScreen> {
                   text: _status,
                   color: scheme.primary,
                 ),
-              const SizedBox(height: 16),
-
-              // Метрики
-              GridView(
+              const SizedBox(height: 18),
+              GridView.count(
+                crossAxisCount: 2,
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 1,
-                  childAspectRatio: 2.8,
-                  mainAxisSpacing: 12,
-                ),
+                childAspectRatio: 1.4,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
                 children: [
                   _metricCard(
-                    title: 'Температура воды',
-                    value: '$_temperature °C',
+                    title: 'Temperature',
+                    value: '$_temperature C',
                     icon: Icons.thermostat_rounded,
                     accent: Colors.deepOrange,
                   ),
                   _metricCard(
-                    title: 'Влажность',
+                    title: 'Water level',
                     value: '$_humidity %',
                     icon: Icons.water_drop_rounded,
-                    accent: Colors.teal,
-                  ),
-                  _metricCard(
-                    title: 'Свет',
-                    value: _ledState.toUpperCase(),
-                    icon: Icons.lightbulb_rounded,
-                    accent: Colors.amber,
+                    accent: Colors.blue,
                   ),
                 ],
               ),
               const SizedBox(height: 12),
-
-              // Пресеты
+              Row(
+                children: [
+                  Expanded(
+                    child: _surfaceCard(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.swap_horiz_rounded, color: scheme.primary),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Flow direction',
+                                  style: TextStyle(
+                                    color: scheme.onSurfaceVariant,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: const [
+                                Icon(Icons.arrow_left_rounded),
+                                Icon(Icons.compress_rounded),
+                                Icon(Icons.arrow_right_rounded),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _surfaceCard(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.lightbulb_rounded, color: Colors.amber),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Lighting',
+                                  style: TextStyle(
+                                    color: scheme.onSurfaceVariant,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Text(
+                                  ledOn ? 'ON' : 'OFF',
+                                  style: TextStyle(
+                                    color: scheme.onSurface,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Switch(
+                                  value: ledOn,
+                                  onChanged: (_) => _toggleLight(),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
               Text(
-                'Режим аквариума',
+                'Presets',
                 style: TextStyle(
                   color: scheme.onSurface,
                   fontSize: 16,
@@ -425,40 +559,45 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 10),
               Row(
                 children: [
-                  _presetButton(AquariumPreset.day, 'Дневной', Icons.wb_sunny_rounded),
+                  _presetButton(AquariumPreset.day, 'Day', Icons.wb_sunny_rounded),
                   const SizedBox(width: 10),
-                  _presetButton(AquariumPreset.night, 'Ночной', Icons.nights_stay_rounded),
+                  _presetButton(AquariumPreset.night, 'Night', Icons.nights_stay_rounded),
                   const SizedBox(width: 10),
-                  _presetButton(AquariumPreset.feeding, 'Кормление', Icons.restaurant_rounded),
+                  _presetButton(AquariumPreset.feeding, 'Feeding', Icons.restaurant_rounded),
                 ],
               ),
               const SizedBox(height: 16),
-
-              // Быстрые действия
+              Text(
+                'Quick actions',
+                style: TextStyle(
+                  color: scheme.onSurface,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 10),
               Row(
                 children: [
                   Expanded(
-                    child: ElevatedButton.icon(
+                    child: FilledButton.icon(
                       onPressed: _getState,
                       icon: const Icon(Icons.sync_rounded),
-                      label: const Text('Обновить данные'),
+                      label: const Text('Refresh data'),
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: ElevatedButton.icon(
+                    child: OutlinedButton.icon(
                       onPressed: _toggleLight,
                       icon: const Icon(Icons.lightbulb_outline),
-                      label: const Text('Переключить свет'),
+                      label: const Text('Toggle light'),
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 20),
-
-              // История
               Text(
-                'История показаний',
+                'History',
                 style: TextStyle(
                   color: scheme.onSurface,
                   fontSize: 16,
@@ -467,14 +606,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 8),
               _historyList(),
-              const SizedBox(height: 24),
-
-              // Переход в настройки
-              OutlinedButton.icon(
-                onPressed: _openSettings,
-                icon: const Icon(Icons.settings_suggest_rounded),
-                label: const Text('Открыть настройки'),
-              ),
             ],
           ),
         ),

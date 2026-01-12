@@ -1,21 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'screens/home_screen.dart';
+import 'screens/app_shell.dart';
 
 // Ключи для SharedPreferences
 const _kPrefThemeMode = 'theme_mode';
 const _kPrefDemoMode = 'demo_mode';
+const _kPrefEspIp = 'esp_ip';
 
 /// Глобальное состояние приложения (тема, демо-режим, профиль пользователя).
 class AppState extends ChangeNotifier {
   AppState({
     required this.themeMode,
     required this.isDemo,
+    required this.espIp,
   });
 
   ThemeMode themeMode;
   bool isDemo;
+  String espIp;
 
   Future<void> setThemeMode(ThemeMode mode) async {
     themeMode = mode;
@@ -29,6 +32,13 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     prefs.setBool(_kPrefDemoMode, enabled);
+  }
+
+  Future<void> setEspIp(String ip) async {
+    espIp = ip;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    prefs.setString(_kPrefEspIp, ip);
   }
 }
 
@@ -56,6 +66,7 @@ Future<void> main() async {
 
   final themeName = prefs.getString(_kPrefThemeMode);
   final bool demo = prefs.getBool(_kPrefDemoMode) ?? false;
+  final espIp = prefs.getString(_kPrefEspIp) ?? '192.168.0.105';
 
   final themeMode = switch (themeName) {
     'dark' => ThemeMode.dark,
@@ -66,6 +77,7 @@ Future<void> main() async {
   final appState = AppState(
     themeMode: themeMode,
     isDemo: demo,
+    espIp: espIp,
   );
 
   runApp(AppScope(
@@ -79,15 +91,15 @@ class MyApp extends StatelessWidget {
 
   ColorScheme _colorScheme(Brightness brightness) {
     // Спокойный «водный» синий как базовый акцент.
-    final seed = const Color(0xFF2E8BC0);
+    final seed = const Color(0xFF2E6BD6);
     return ColorScheme.fromSeed(
       seedColor: seed,
       brightness: brightness,
       primaryContainer: brightness == Brightness.light
-          ? const Color(0xFFE3F2FB)
+          ? const Color(0xFFE6F0FF)
           : const Color(0xFF0D1B2A),
       surface: brightness == Brightness.light
-          ? const Color(0xFFF7FBFF)
+          ? const Color(0xFFF3F6FB)
           : const Color(0xFF0B1320),
     );
   }
@@ -98,6 +110,7 @@ class MyApp extends StatelessWidget {
       useMaterial3: true,
       colorScheme: scheme,
       scaffoldBackgroundColor: scheme.surface,
+      cardColor: scheme.surface,
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         backgroundColor: scheme.inverseSurface,
@@ -119,13 +132,23 @@ class MyApp extends StatelessWidget {
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           minimumSize: const Size.fromHeight(52),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          elevation: 0,
+          backgroundColor: scheme.primary,
+          foregroundColor: scheme.onPrimary,
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          elevation: 0,
         ),
       ),
       cardTheme: CardThemeData(
         elevation: 0,
-        color: scheme.primaryContainer.withOpacity(0.45),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        color: scheme.surface,
+        shadowColor: Colors.black.withOpacity(0.12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
       ),
       appBarTheme: AppBarTheme(
         elevation: 0,
@@ -136,6 +159,13 @@ class MyApp extends StatelessWidget {
           color: scheme.onSurface,
           fontSize: 20,
           fontWeight: FontWeight.w700,
+        ),
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        labelTextStyle: MaterialStateProperty.resolveWith(
+          (states) => TextStyle(
+            fontWeight: states.contains(MaterialState.selected) ? FontWeight.w700 : FontWeight.w600,
+          ),
         ),
       ),
     );
@@ -153,7 +183,7 @@ class MyApp extends StatelessWidget {
           theme: _theme(Brightness.light),
           darkTheme: _theme(Brightness.dark),
           themeMode: appState.themeMode,
-          home: const HomeScreen(),
+          home: const AppShell(),
         );
       },
     );
