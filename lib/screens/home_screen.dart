@@ -29,12 +29,15 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   String _ledState = 'unknown';
+  String? _requestedLedState;
   String _temperature = '---';
   String _humidity = '---';
   String _status = 'Waiting for data. Pull to refresh.';
   bool _hasError = false;
   bool _dangerTemp = false;
   bool _isLoading = false;
+  bool _isLightingAuto = false;
+  String _lightingStatus = 'Ready.';
   DateTime? _lastOnlineAt;
   DateTime? _lastUpdatedAt;
   AquariumPreset _preset = AquariumPreset.day;
@@ -106,11 +109,18 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _toggleLight() async {
     final appState = AppScope.of(context);
     final espIp = appState.espIp;
+    final nextState = _ledState.toLowerCase() == 'on' ? 'off' : 'on';
+    setState(() {
+      _requestedLedState = nextState;
+      _lightingStatus = 'Sending...';
+    });
     if (appState.isDemo) {
       setState(() {
-        _ledState = _ledState == 'on' ? 'off' : 'on';
+        _ledState = nextState;
         _status = 'Light toggled (demo mode).';
         _hasError = false;
+        _requestedLedState = null;
+        _lightingStatus = 'Applied.';
       });
       return;
     }
@@ -123,10 +133,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (response.statusCode == 200) {
         _getState();
+        if (mounted) {
+          setState(() {
+            _requestedLedState = null;
+            _lightingStatus = 'Applied.';
+          });
+        }
       } else {
         setState(() {
           _status = 'HTTP error: ${response.statusCode}';
           _hasError = true;
+          _lightingStatus = 'Failed to apply.';
         });
       }
       client.close();
@@ -134,6 +151,7 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _status = 'Request error: ${e.toString()}';
         _hasError = true;
+        _lightingStatus = 'Failed to apply.';
       });
     }
   }
@@ -524,6 +542,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final isOnline = !_hasError && _temperature != '---';
     final espIp = appState.espIp;
     final ledOn = _ledState.toLowerCase() == 'on';
+    final requestedLedOn = _requestedLedState == null
+        ? (ledOn ? 'On' : 'Off')
+        : (_requestedLedState == 'on' ? 'On' : 'Off');
     final isFlowEnabled = isOnline && !_isLoading;
     final tempTrend = _trendText(currentValue: _temperature, isTemperature: true);
     final humTrend = _trendText(currentValue: _humidity, isTemperature: false);
@@ -853,22 +874,80 @@ class _HomeScreenState extends State<HomeScreen> {
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
+                                const Spacer(),
+                                Text(
+                                  _isLightingAuto ? 'Auto' : 'Manual',
+                                  style: TextStyle(
+                                    color: scheme.onSurface,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                               ],
                             ),
                             const SizedBox(height: 12),
                             Row(
                               children: [
-                                Text(
-                                  ledOn ? 'ON' : 'OFF',
-                                  style: TextStyle(
-                                    color: scheme.onSurface,
-                                    fontWeight: FontWeight.w700,
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Requested: $requestedLedOn',
+                                        style: TextStyle(
+                                          color: scheme.onSurface,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Actual: ${ledOn ? "On" : "Off"}',
+                                        style: TextStyle(
+                                          color: scheme.onSurfaceVariant,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                                 const Spacer(),
                                 Switch(
                                   value: ledOn,
                                   onChanged: (_) => _toggleLight(),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    _lightingStatus,
+                                    style: TextStyle(
+                                      color: scheme.onSurfaceVariant,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                                SegmentedButton<bool>(
+                                  segments: const [
+                                    ButtonSegment(
+                                      value: false,
+                                      label: Text('Manual'),
+                                      icon: Icon(Icons.tune_rounded),
+                                    ),
+                                    ButtonSegment(
+                                      value: true,
+                                      label: Text('Auto'),
+                                      icon: Icon(Icons.schedule_rounded),
+                                    ),
+                                  ],
+                                  selected: {_isLightingAuto},
+                                  onSelectionChanged: (selection) {
+                                    setState(() {
+                                      _isLightingAuto = selection.first;
+                                    });
+                                  },
                                 ),
                               ],
                             ),
