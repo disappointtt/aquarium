@@ -38,6 +38,44 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return '$dd.$mm.$yyyy';
   }
 
+  String _historyFlowLabel(HistoryFlowDirection direction) {
+    return switch (direction) {
+      HistoryFlowDirection.left => 'Left',
+      HistoryFlowDirection.stop => 'Stop',
+      HistoryFlowDirection.right => 'Right',
+    };
+  }
+
+  String _snapshotSubtitle(HistorySnapshot snapshot) {
+    final temp = snapshot.temperature != null
+        ? '${snapshot.temperature!.toStringAsFixed(1)}${snapshot.temperatureUnit}'
+        : '-';
+    final water = snapshot.waterLevelPercent != null ? '${snapshot.waterLevelPercent}%' : '-';
+    String light;
+    if (snapshot.lightingActual == null) {
+      light = '-';
+    } else {
+      light = snapshot.lightingActual! ? 'ON' : 'OFF';
+      if (snapshot.lightingMode != null) {
+        final mode = snapshot.lightingMode == HistoryLightingMode.auto ? 'Auto' : 'Manual';
+        light = '$light ($mode)';
+      }
+    }
+    final flow = snapshot.flowDirection != null ? _historyFlowLabel(snapshot.flowDirection!) : '-';
+    return 'Temp: $temp | Water: $water | Light: $light | Flow: $flow';
+  }
+
+  String _eventSubtitle(HistoryEvent event) {
+    if (event.snapshot != null) {
+      return '${_formatEventTime(event.time)} - ${_snapshotSubtitle(event.snapshot!)}';
+    }
+    if (event.detail != null) {
+      return '${_formatEventTime(event.time)} - ${event.detail}';
+    }
+    return _formatEventTime(event.time);
+  }
+
+
   List<HistoryEvent> _filteredEvents(List<HistoryEvent> events) {
     final filtered = events.where((event) {
       return switch (_historyFilter) {
@@ -56,30 +94,48 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   void _exportEvents({required bool asJson}) {
     final items = _filteredEvents(_historyStore.events)
-        .map(
-          (e) => {
+        .map((e) {
+          final snapshot = e.snapshot;
+          final lightingMode = snapshot?.lightingMode;
+          final flowDirection = snapshot?.flowDirection;
+          final connectionState = snapshot?.connectionState;
+          return {
             'time': e.time.toIso8601String(),
             'title': e.title,
             'detail': e.detail ?? '',
             'category': e.category.name,
             'result': e.ok ? 'OK' : 'Fail',
-          },
-        )
+            'temperature': snapshot?.temperature,
+            'temperatureUnit': snapshot?.temperatureUnit,
+            'waterLevelPercent': snapshot?.waterLevelPercent,
+            'lightingRequested': snapshot?.lightingRequested,
+            'lightingActual': snapshot?.lightingActual,
+            'lightingMode': lightingMode?.name,
+            'flowDirection': flowDirection?.name,
+            'connectionState': connectionState?.name,
+            'lastSeen': snapshot?.lastSeen?.toIso8601String(),
+          };
+        })
         .toList();
-    final payload = asJson
-        ? jsonEncode(items)
-        : [
-            'time,title,detail,category,result',
-            ...items.map(
-              (e) =>
-                  '"${e['time']}","${e['title']}","${e['detail']}","${e['category']}","${e['result']}"',
-            ),
-          ].join('\n');
-    Clipboard.setData(ClipboardData(text: payload));
+    if (asJson) {
+      final payload = jsonEncode(items);
+      Clipboard.setData(ClipboardData(text: payload));
+    } else {
+      final rows = [
+        'time,title,detail,category,result,temperature,temperatureUnit,waterLevelPercent,lightingRequested,lightingActual,lightingMode,flowDirection,connectionState,lastSeen',
+        ...items.map(
+          (e) =>
+              '"${e['time'] ?? ''}","${e['title'] ?? ''}","${e['detail'] ?? ''}","${e['category'] ?? ''}","${e['result'] ?? ''}","${e['temperature'] ?? ''}","${e['temperatureUnit'] ?? ''}","${e['waterLevelPercent'] ?? ''}","${e['lightingRequested'] ?? ''}","${e['lightingActual'] ?? ''}","${e['lightingMode'] ?? ''}","${e['flowDirection'] ?? ''}","${e['connectionState'] ?? ''}","${e['lastSeen'] ?? ''}"',
+        ),
+      ];
+      Clipboard.setData(ClipboardData(text: rows.join('\n')));
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Exported ${asJson ? 'JSON' : 'CSV'} to clipboard.')),
     );
   }
+
+
 
   void _showExportDialog() {
     showDialog<void>(
@@ -128,7 +184,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       ),
       title: Text(event.title),
       subtitle: Text(
-        '${_formatEventTime(event.time)}${event.detail != null ? ' - ${event.detail}' : ''}',
+        _eventSubtitle(event),
         style: TextStyle(color: scheme.onSurfaceVariant),
       ),
       trailing: Text(

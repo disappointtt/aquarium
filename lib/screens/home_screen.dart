@@ -81,16 +81,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final demoHum = (40 + Random().nextDouble() * 30).toStringAsFixed(0);
       final demoLed = Random().nextBool() ? 'on' : 'off';
       _updateFromResponse(demoLed, demoTemp, demoHum, isDemo: true);
-      _addEvent(
-        HistoryEvent(
-          time: DateTime.now(),
-          title: 'Refresh',
-          detail: 'Demo data updated',
-          icon: Icons.sync_rounded,
-          category: HistoryCategory.readings,
-          ok: true,
-        ),
-      );
+      _recordRefresh(ok: true, detail: 'Demo data updated');
       return;
     }
 
@@ -106,32 +97,14 @@ class _HomeScreenState extends State<HomeScreen> {
         final temp = data['temperature']?.toString() ?? '---';
         final hum = data['humidity']?.toString() ?? '---';
         _updateFromResponse(led, temp, hum, isDemo: false);
-        _addEvent(
-          HistoryEvent(
-            time: DateTime.now(),
-            title: 'Refresh',
-            detail: 'Readings updated',
-            icon: Icons.sync_rounded,
-            category: HistoryCategory.readings,
-            ok: true,
-          ),
-        );
+        _recordRefresh(ok: true, detail: 'Readings updated');
       } else {
         setState(() {
           _status = 'HTTP error: ${response.statusCode}';
           _hasError = true;
         });
         _markConnection(false);
-        _addEvent(
-          HistoryEvent(
-            time: DateTime.now(),
-            title: 'Refresh failed',
-            detail: 'HTTP ${response.statusCode}',
-            icon: Icons.sync_problem_rounded,
-            category: HistoryCategory.alerts,
-            ok: false,
-          ),
-        );
+        _recordRefresh(ok: false, detail: 'HTTP ${response.statusCode}');
       }
       client.close();
     } catch (e) {
@@ -140,16 +113,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _hasError = true;
       });
       _markConnection(false);
-      _addEvent(
-        HistoryEvent(
-          time: DateTime.now(),
-          title: 'Refresh failed',
-          detail: 'Request error',
-          icon: Icons.sync_problem_rounded,
-          category: HistoryCategory.alerts,
-          ok: false,
-        ),
-      );
+      _recordRefresh(ok: false, detail: 'Request error');
     } finally {
       if (mounted) {
         setState(() {
@@ -310,6 +274,103 @@ class _HomeScreenState extends State<HomeScreen> {
     final mm = time.minute.toString().padLeft(2, '0');
     return '$hh:$mm';
   }
+
+  HistoryFlowDirection _mapFlowDirection(FlowDirection direction) {
+    return switch (direction) {
+      FlowDirection.left => HistoryFlowDirection.left,
+      FlowDirection.stop => HistoryFlowDirection.stop,
+      FlowDirection.right => HistoryFlowDirection.right,
+    };
+  }
+
+  String _historyFlowLabel(HistoryFlowDirection direction) {
+    return switch (direction) {
+      HistoryFlowDirection.left => 'Left',
+      HistoryFlowDirection.stop => 'Stop',
+      HistoryFlowDirection.right => 'Right',
+    };
+  }
+
+  HistorySnapshot _buildSnapshot({required bool ok}) {
+    final tempValue = ok ? double.tryParse(_temperature) : null;
+    final humidityValue = ok ? double.tryParse(_humidity) : null;
+    int? waterLevelPercent;
+    if (humidityValue != null) {
+      waterLevelPercent = humidityValue <= 1 ? (humidityValue * 100).round() : humidityValue.round();
+    }
+    final actualLight = ok ? _ledState.toLowerCase() == 'on' : null;
+    final requestedLight = ok
+        ? (_requestedLedState == null ? actualLight : _requestedLedState == 'on')
+        : null;
+    final lightingMode = ok ? (_isLightingAuto ? HistoryLightingMode.auto : HistoryLightingMode.manual) : null;
+    final flowDirection = ok ? _mapFlowDirection(_flowDirection) : null;
+    final connectionState = ok ? HistoryConnectionState.online : HistoryConnectionState.offline;
+    return HistorySnapshot(
+      temperature: tempValue,
+      waterLevelPercent: waterLevelPercent,
+      lightingRequested: requestedLight,
+      lightingActual: actualLight,
+      lightingMode: lightingMode,
+      flowDirection: flowDirection,
+      connectionState: connectionState,
+      lastSeen: _lastOnlineAt,
+    );
+  }
+
+  String _snapshotSubtitle(HistorySnapshot snapshot) {
+    final temp = snapshot.temperature != null
+        ? '${snapshot.temperature!.toStringAsFixed(1)}${snapshot.temperatureUnit}'
+        : '-';
+    final water = snapshot.waterLevelPercent != null ? '${snapshot.waterLevelPercent}%' : '-';
+    String light;
+    if (snapshot.lightingActual == null) {
+      light = '-';
+    } else {
+      light = snapshot.lightingActual! ? 'ON' : 'OFF';
+      if (snapshot.lightingMode != null) {
+        final mode = snapshot.lightingMode == HistoryLightingMode.auto ? 'Auto' : 'Manual';
+        light = '$light ($mode)';
+      }
+    }
+    final flow = snapshot.flowDirection != null ? _historyFlowLabel(snapshot.flowDirection!) : '-';
+    return 'Temp: $temp | Water: $water | Light: $light | Flow: $flow';
+  }
+
+  String _eventSubtitle(HistoryEvent event) {
+    if (event.snapshot != null) {
+      return '${_formatEventTime(event.time)} - ${_snapshotSubtitle(event.snapshot!)}';
+    }
+    if (event.detail != null) {
+      return '${_formatEventTime(event.time)} - ${event.detail}';
+    }
+    return _formatEventTime(event.time);
+  }
+
+  void _recordRefresh({required bool ok, String? detail}) {
+    final timestamp = DateTime.now();
+    _addEvent(
+      HistoryEvent(
+        time: timestamp,
+        title: 'Refresh',
+        detail: detail,
+        icon: ok ? Icons.sync_rounded : Icons.sync_problem_rounded,
+        category: HistoryCategory.commands,
+        ok: ok,
+      ),
+    );
+    _addEvent(
+      HistoryEvent(
+        time: timestamp,
+        title: 'Readings',
+        detail: ok ? null : 'No data',
+        icon: Icons.sensors_rounded,
+        category: HistoryCategory.readings,
+        ok: ok,
+        snapshot: _buildSnapshot(ok: ok),
+      ),
+    );
+  }
+
 
   void _markConnection(bool isOnlineNow) {
     if (isOnlineNow == _wasOnline) return;
@@ -827,9 +888,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   title: Text(event.title),
                   subtitle: Text(
-                    '${_formatEventTime(event.time)}${event.detail != null ? ' - ${event.detail}' : ''}',
-                    style: TextStyle(color: scheme.onSurfaceVariant),
-                  ),
+                _eventSubtitle(event),
+                style: TextStyle(color: scheme.onSurfaceVariant),
+              ),
                   trailing: Text(
                     event.ok ? 'OK' : 'Fail',
                     style: TextStyle(
