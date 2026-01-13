@@ -2,9 +2,11 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 import '../main.dart';
+import 'settings_screen.dart';
 
 class Reading {
   final DateTime time;
@@ -30,6 +32,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _status = 'Waiting for data. Pull to refresh.';
   bool _hasError = false;
   bool _dangerTemp = false;
+  DateTime? _lastOnlineAt;
   AquariumPreset _preset = AquariumPreset.day;
   final List<Reading> _history = [];
 
@@ -131,6 +134,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _hasError = false;
       _dangerTemp = _isDangerTemp(temp);
       _pushHistory(temp, hum);
+      _lastOnlineAt = DateTime.now();
     });
   }
 
@@ -138,6 +142,45 @@ class _HomeScreenState extends State<HomeScreen> {
     final value = double.tryParse(temp);
     if (value == null) return false;
     return value < 20 || value > 30;
+  }
+
+  String _offlineReason(String status) {
+    final lowered = status.toLowerCase();
+    if (lowered.contains('network is unreachable') ||
+        lowered.contains('no route to host') ||
+        lowered.contains('network unreachable')) {
+      return 'Not in Wi-Fi';
+    }
+    if (lowered.contains('failed host lookup') ||
+        lowered.contains('connection refused') ||
+        lowered.contains('http error') ||
+        lowered.contains('host lookup')) {
+      return 'Wrong IP';
+    }
+    return 'No response';
+  }
+
+  String _formatLastOnline() {
+    final last = _lastOnlineAt;
+    if (last == null) return 'Last online: never';
+    final diff = DateTime.now().difference(last);
+    if (diff.inMinutes < 1) return 'Last online: just now';
+    if (diff.inHours < 1) return 'Last online: ${diff.inMinutes} min ago';
+    if (diff.inHours < 24) return 'Last online: ${diff.inHours} hr ago';
+    return 'Last online: ${diff.inDays} days ago';
+  }
+
+  void _copyIp(String ip) {
+    Clipboard.setData(ClipboardData(text: ip));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('IP copied.')),
+    );
+  }
+
+  void _openSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const SettingsScreen()),
+    );
   }
 
   Widget _buildInfoBanner({required IconData icon, required String text, required Color color}) {
@@ -417,9 +460,47 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   const Spacer(),
-                  Text(
-                    'IP: $espIp',
-                    style: TextStyle(color: scheme.onSurfaceVariant),
+                  if (!isOnline)
+                    TextButton.icon(
+                      onPressed: _getState,
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      label: const Text('Reconnect'),
+                    ),
+                ],
+              ),
+              if (!isOnline) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Reason: ${_offlineReason(_status)}',
+                  style: TextStyle(
+                    color: scheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _formatLastOnline(),
+                  style: TextStyle(color: scheme.onSurfaceVariant),
+                ),
+              ],
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'IP: $espIp',
+                      style: TextStyle(color: scheme.onSurfaceVariant),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => _copyIp(espIp),
+                    icon: const Icon(Icons.copy_rounded),
+                    tooltip: 'Copy IP',
+                  ),
+                  TextButton(
+                    onPressed: _openSettings,
+                    child: const Text('Change IP'),
                   ),
                 ],
               ),
