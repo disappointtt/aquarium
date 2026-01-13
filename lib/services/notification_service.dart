@@ -8,8 +8,7 @@ class NotificationService {
   static Future<void> init() async {
     if (_initialized) return;
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const ios = DarwinInitializationSettings();
-    const settings = InitializationSettings(android: android, iOS: ios);
+    const settings = InitializationSettings(android: android);
     await _plugin.initialize(settings);
     _initialized = true;
   }
@@ -19,10 +18,6 @@ class NotificationService {
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>();
     await android?.requestNotificationsPermission();
-    final ios = _plugin
-        .resolvePlatformSpecificImplementation<
-            DarwinFlutterLocalNotificationsPlugin>();
-    await ios?.requestPermissions(alert: true, badge: true, sound: true);
   }
 
   static Future<void> showAlert({
@@ -39,8 +34,7 @@ class NotificationService {
       importance: Importance.high,
       priority: Priority.high,
     );
-    const ios = DarwinNotificationDetails();
-    const details = NotificationDetails(android: android, iOS: ios);
+    const details = NotificationDetails(android: android);
     final id = DateTime.now().millisecondsSinceEpoch.remainder(100000);
     await _plugin.show(id, title, body, details);
   }
