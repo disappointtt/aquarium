@@ -2,11 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'screens/app_shell.dart';
+import 'services/notification_service.dart';
 
 // Ключи для SharedPreferences
 const _kPrefThemeMode = 'theme_mode';
 const _kPrefDemoMode = 'demo_mode';
 const _kPrefEspIp = 'esp_ip';
+const _kPrefAlertsEnabled = 'alerts_enabled';
+const _kPrefTempMin = 'alert_temp_min';
+const _kPrefTempMax = 'alert_temp_max';
+const _kPrefWaterMin = 'alert_water_min';
+const _kPrefOfflineTimeout = 'alert_offline_timeout';
+const _kPrefAlertCooldown = 'alert_cooldown';
 
 /// Глобальное состояние приложения (тема, демо-режим, профиль пользователя).
 class AppState extends ChangeNotifier {
@@ -14,11 +21,26 @@ class AppState extends ChangeNotifier {
     required this.themeMode,
     required this.isDemo,
     required this.espIp,
+    required this.alertsEnabled,
+    required this.tempMin,
+    required this.tempMax,
+    required this.waterMin,
+    required this.offlineTimeoutMinutes,
+    required this.alertCooldownMinutes,
   });
 
   ThemeMode themeMode;
   bool isDemo;
   String espIp;
+  bool alertsEnabled;
+  double tempMin;
+  double tempMax;
+  double waterMin;
+  int offlineTimeoutMinutes;
+  int alertCooldownMinutes;
+
+  Duration get offlineTimeout => Duration(minutes: offlineTimeoutMinutes);
+  Duration get alertCooldown => Duration(minutes: alertCooldownMinutes);
 
   Future<void> setThemeMode(ThemeMode mode) async {
     themeMode = mode;
@@ -39,6 +61,34 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     prefs.setString(_kPrefEspIp, ip);
+  }
+
+  Future<void> setAlertsEnabled(bool enabled) async {
+    alertsEnabled = enabled;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    prefs.setBool(_kPrefAlertsEnabled, enabled);
+  }
+
+  Future<void> setAlertThresholds({
+    required double tempMin,
+    required double tempMax,
+    required double waterMin,
+    required int offlineTimeoutMinutes,
+    required int alertCooldownMinutes,
+  }) async {
+    this.tempMin = tempMin;
+    this.tempMax = tempMax;
+    this.waterMin = waterMin;
+    this.offlineTimeoutMinutes = offlineTimeoutMinutes;
+    this.alertCooldownMinutes = alertCooldownMinutes;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    prefs.setDouble(_kPrefTempMin, tempMin);
+    prefs.setDouble(_kPrefTempMax, tempMax);
+    prefs.setDouble(_kPrefWaterMin, waterMin);
+    prefs.setInt(_kPrefOfflineTimeout, offlineTimeoutMinutes);
+    prefs.setInt(_kPrefAlertCooldown, alertCooldownMinutes);
   }
 }
 
@@ -63,10 +113,17 @@ class AppScope extends InheritedNotifier<AppState> {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
+  await NotificationService.init();
 
   final themeName = prefs.getString(_kPrefThemeMode);
   final bool demo = prefs.getBool(_kPrefDemoMode) ?? false;
   final espIp = prefs.getString(_kPrefEspIp) ?? '192.168.0.105';
+  final alertsEnabled = prefs.getBool(_kPrefAlertsEnabled) ?? true;
+  final tempMin = prefs.getDouble(_kPrefTempMin) ?? 24.0;
+  final tempMax = prefs.getDouble(_kPrefTempMax) ?? 28.0;
+  final waterMin = prefs.getDouble(_kPrefWaterMin) ?? 30.0;
+  final offlineTimeoutMinutes = prefs.getInt(_kPrefOfflineTimeout) ?? 5;
+  final alertCooldownMinutes = prefs.getInt(_kPrefAlertCooldown) ?? 10;
 
   final themeMode = switch (themeName) {
     'dark' => ThemeMode.dark,
@@ -78,6 +135,12 @@ Future<void> main() async {
     themeMode: themeMode,
     isDemo: demo,
     espIp: espIp,
+    alertsEnabled: alertsEnabled,
+    tempMin: tempMin,
+    tempMax: tempMax,
+    waterMin: waterMin,
+    offlineTimeoutMinutes: offlineTimeoutMinutes,
+    alertCooldownMinutes: alertCooldownMinutes,
   );
 
   runApp(AppScope(

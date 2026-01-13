@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -6,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 import '../main.dart';
+import '../services/notification_service.dart';
 import 'settings_screen.dart';
 
 class Reading {
@@ -56,7 +58,6 @@ class _HomeScreenState extends State<HomeScreen> {
   String _humidity = '---';
   String _status = 'Waiting for data. Pull to refresh.';
   bool _hasError = false;
-  bool _dangerTemp = false;
   bool _isLoading = false;
   bool _isLightingAuto = false;
   String _lightingStatus = 'Ready.';
@@ -69,6 +70,26 @@ class _HomeScreenState extends State<HomeScreen> {
   final List<HistoryEvent> _events = [];
   HistoryFilter _historyFilter = HistoryFilter.all;
   bool _wasOnline = false;
+  final Map<String, DateTime> _lastAlertAt = {};
+  Timer? _alertTimer;
+  String? _alertMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _alertTimer ??= Timer.periodic(
+        const Duration(minutes: 1),
+        (_) => _checkOfflineAlert(),
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _alertTimer?.cancel();
+    super.dispose();
+  }
 
   void _pushHistory(String temp, String hum) {
     if (temp == '---' || hum == '---') return;
@@ -277,19 +298,42 @@ class _HomeScreenState extends State<HomeScreen> {
       _humidity = hum;
       _status = isDemo ? 'Demo readings updated.' : 'Readings updated.';
       _hasError = false;
-      _dangerTemp = _isDangerTemp(temp);
       _pushHistory(temp, hum);
       _lastOnlineAt = DateTime.now();
       _lastUpdatedAt = DateTime.now();
       _isLoading = false;
     });
     _markConnection(true);
+    _evaluateReadingAlerts(temp: temp, humidity: hum);
   }
 
-  bool _isDangerTemp(String temp) {
-    final value = double.tryParse(temp);
-    if (value == null) return false;
-    return value < 20 || value > 30;
+  void _evaluateReadingAlerts({required String temp, required String humidity}) {
+    final appState = AppScope.of(context);
+    final tempValue = double.tryParse(temp);
+    final waterValue = double.tryParse(humidity);
+    String? banner;
+
+    if (tempValue != null &&
+        (tempValue < appState.tempMin || tempValue > appState.tempMax)) {
+      final direction = tempValue < appState.tempMin ? 'low' : 'high';
+      final message = 'Temperature $direction: $tempValue°C';
+      banner = message;
+      _triggerAlert(
+        key: 'temp_$direction',
+        title: 'Temperature $direction',
+        detail: '$tempValue°C',
+      );
+    } else if (waterValue != null && waterValue < appState.waterMin) {
+      final message = 'Water level low: ${waterValue.toStringAsFixed(0)}%';
+      banner = message;
+      _triggerAlert(
+        key: 'water_low',
+        title: 'Water level low',
+        detail: '${waterValue.toStringAsFixed(0)}%',
+      );
+    }
+
+    _setAlertBanner(banner);
   }
 
   String _offlineReason(String status) {
@@ -326,6 +370,71 @@ class _HomeScreenState extends State<HomeScreen> {
     return 'Updated $hh:$mm';
   }
 
+  void _setAlertBanner(String? message) {
+    if (_alertMessage == message) return;
+    setState(() {
+      _alertMessage = message;
+    });
+  }
+
+  bool _canTriggerAlert(String key, Duration cooldown) {
+    final last = _lastAlertAt[key];
+    if (last == null) return true;
+    return DateTime.now().difference(last) >= cooldown;
+  }
+
+  Future<void> _triggerAlert({
+    required String key,
+    required String title,
+    required String detail,
+  }) async {
+    final appState = AppScope.of(context);
+    final cooldown = appState.alertCooldown;
+    if (!_canTriggerAlert(key, cooldown)) return;
+    _lastAlertAt[key] = DateTime.now();
+    _addEvent(
+      HistoryEvent(
+        time: DateTime.now(),
+        title: title,
+        detail: detail,
+        icon: Icons.warning_amber_rounded,
+        category: HistoryCategory.alerts,
+        ok: false,
+      ),
+    );
+    if (appState.alertsEnabled) {
+      await NotificationService.showAlert(
+        title: title,
+        body: detail,
+      );
+    }
+  }
+
+  void _checkOfflineAlert() {
+    if (!mounted) return;
+    final appState = AppScope.of(context);
+    final isOnline = !_hasError && _temperature != '---';
+    if (isOnline) {
+      if (_alertMessage == 'Offline > ${appState.offlineTimeoutMinutes} min') {
+        _setAlertBanner(null);
+      }
+      return;
+    }
+    final last = _lastOnlineAt;
+    if (last == null) return;
+    final offlineFor = DateTime.now().difference(last);
+    if (offlineFor >= appState.offlineTimeout) {
+      final minutes = appState.offlineTimeoutMinutes;
+      final banner = 'Offline > $minutes min';
+      _setAlertBanner(banner);
+      _triggerAlert(
+        key: 'offline',
+        title: 'Offline',
+        detail: 'No connection for $minutes min',
+      );
+    }
+  }
+
   String _formatEventTime(DateTime time) {
     final hh = time.hour.toString().padLeft(2, '0');
     final mm = time.minute.toString().padLeft(2, '0');
@@ -335,6 +444,9 @@ class _HomeScreenState extends State<HomeScreen> {
   void _markConnection(bool isOnlineNow) {
     if (isOnlineNow == _wasOnline) return;
     _wasOnline = isOnlineNow;
+    if (isOnlineNow) {
+      _setAlertBanner(null);
+    }
     _addEvent(
       HistoryEvent(
         time: DateTime.now(),
@@ -1109,18 +1221,40 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ],
               ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Icon(
+                    appState.alertsEnabled
+                        ? Icons.notifications_active_rounded
+                        : Icons.notifications_off_rounded,
+                    color: scheme.onSurfaceVariant,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    appState.alertsEnabled ? 'Alerts enabled' : 'Alerts off',
+                    style: TextStyle(color: scheme.onSurfaceVariant),
+                  ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: _openSettings,
+                    child: const Text('Alert settings'),
+                  ),
+                ],
+              ),
               const SizedBox(height: 12),
-              if (_hasError)
+              if (_alertMessage != null)
+                _buildInfoBanner(
+                  icon: Icons.warning_amber_rounded,
+                  text: _alertMessage!,
+                  color: Colors.red,
+                )
+              else if (_hasError)
                 _buildInfoBanner(
                   icon: Icons.warning_amber_rounded,
                   text: _status,
                   color: Colors.orange,
-                )
-              else if (_dangerTemp)
-                _buildInfoBanner(
-                  icon: Icons.thermostat,
-                  text: 'Temperature alert: $_temperature C',
-                  color: Colors.red,
                 )
               else
                 _buildInfoBanner(

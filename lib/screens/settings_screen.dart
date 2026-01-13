@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../main.dart';
+import '../services/notification_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -12,12 +13,22 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _ipController = TextEditingController();
+  final TextEditingController _tempMinController = TextEditingController();
+  final TextEditingController _tempMaxController = TextEditingController();
+  final TextEditingController _waterMinController = TextEditingController();
+  final TextEditingController _offlineTimeoutController = TextEditingController();
+  final TextEditingController _cooldownController = TextEditingController();
   bool _isTesting = false;
   bool _didLoad = false;
 
   @override
   void dispose() {
     _ipController.dispose();
+    _tempMinController.dispose();
+    _tempMaxController.dispose();
+    _waterMinController.dispose();
+    _offlineTimeoutController.dispose();
+    _cooldownController.dispose();
     super.dispose();
   }
 
@@ -25,7 +36,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_didLoad) return;
-    _ipController.text = AppScope.of(context).espIp;
+    final appState = AppScope.of(context);
+    _ipController.text = appState.espIp;
+    _tempMinController.text = appState.tempMin.toStringAsFixed(1);
+    _tempMaxController.text = appState.tempMax.toStringAsFixed(1);
+    _waterMinController.text = appState.waterMin.toStringAsFixed(0);
+    _offlineTimeoutController.text = appState.offlineTimeoutMinutes.toString();
+    _cooldownController.text = appState.alertCooldownMinutes.toString();
     _didLoad = true;
   }
 
@@ -82,6 +99,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _changeDemo(bool value) async {
     final appState = AppScope.of(context);
     await appState.setDemoMode(value);
+  }
+
+  Future<void> _saveAlerts() async {
+    final appState = AppScope.of(context);
+    final tempMin = double.tryParse(_tempMinController.text.trim());
+    final tempMax = double.tryParse(_tempMaxController.text.trim());
+    final waterMin = double.tryParse(_waterMinController.text.trim());
+    final offlineTimeout = int.tryParse(_offlineTimeoutController.text.trim());
+    final cooldown = int.tryParse(_cooldownController.text.trim());
+    if (tempMin == null ||
+        tempMax == null ||
+        waterMin == null ||
+        offlineTimeout == null ||
+        cooldown == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Invalid alert values.')),
+      );
+      return;
+    }
+    if (tempMin >= tempMax) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Temp min must be lower than temp max.')),
+      );
+      return;
+    }
+    await appState.setAlertThresholds(
+      tempMin: tempMin,
+      tempMax: tempMax,
+      waterMin: waterMin.clamp(0, 100).toDouble(),
+      offlineTimeoutMinutes: offlineTimeout.clamp(1, 120).toInt(),
+      alertCooldownMinutes: cooldown.clamp(1, 120).toInt(),
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Alerts saved.')),
+    );
   }
 
   Widget _surfaceCard(BuildContext context, Widget child) {
@@ -173,6 +226,103 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ),
                       ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Alerts',
+              style: TextStyle(
+                color: scheme.onSurface,
+                fontWeight: FontWeight.w700,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 10),
+            _surfaceCard(
+              context,
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Alerts enabled'),
+                      subtitle: const Text('Local notifications for critical events.'),
+                      value: appState.alertsEnabled,
+                      onChanged: (value) async {
+                        await appState.setAlertsEnabled(value);
+                        if (value) {
+                          await NotificationService.requestPermissions();
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _tempMinController,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(
+                              labelText: 'Temp min (°C)',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: _tempMaxController,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(
+                              labelText: 'Temp max (°C)',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _waterMinController,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(
+                              labelText: 'Water min (%)',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: _offlineTimeoutController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Offline timeout (min)',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _cooldownController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Alert cooldown (min)',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: _saveAlerts,
+                        icon: const Icon(Icons.save_alt_rounded),
+                        label: const Text('Save alerts'),
+                      ),
                     ),
                   ],
                 ),
