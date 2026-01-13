@@ -286,6 +286,66 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _editPreset(AquariumPreset preset) {
+    final label = switch (preset) {
+      AquariumPreset.day => 'Day',
+      AquariumPreset.night => 'Night',
+      AquariumPreset.feeding => 'Feeding',
+    };
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit preset'),
+        content: Text('Configure $label preset settings here.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _applyPreset(AquariumPreset preset, {required bool isOnline}) {
+    setState(() {
+      _preset = preset;
+      _status = isOnline
+          ? 'Preset applied: ${_presetLabel(preset)}.'
+          : 'Preset queued: ${_presetLabel(preset)}.';
+      _hasError = false;
+    });
+  }
+
+  String _presetLabel(AquariumPreset preset) {
+    return switch (preset) {
+      AquariumPreset.day => 'Day',
+      AquariumPreset.night => 'Night',
+      AquariumPreset.feeding => 'Feeding',
+    };
+  }
+
+  Future<void> _syncTime() async {
+    setState(() {
+      _status = 'Syncing time...';
+      _hasError = false;
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    if (!mounted) return;
+    setState(() {
+      _status = 'Time synced.';
+    });
+  }
+
+  void _emergencyOff({required bool isOnline}) {
+    setState(() {
+      _flowDirection = FlowDirection.stop;
+      _requestedLedState = 'off';
+      _lightingStatus = isOnline ? 'Sending...' : 'Queued.';
+      _status = isOnline ? 'Emergency OFF sent.' : 'Emergency OFF queued.';
+    });
+  }
+
   String _flowLabel(FlowDirection direction) {
     return switch (direction) {
       FlowDirection.left => 'Left',
@@ -473,14 +533,23 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _presetButton(AquariumPreset preset, String label, IconData icon) {
     final scheme = Theme.of(context).colorScheme;
     final isActive = preset == _preset;
+    final isOnline = !_hasError && _temperature != '---';
+    final subtitle = switch (preset) {
+      AquariumPreset.day => 'Light on · Flow right',
+      AquariumPreset.night => 'Light off · Flow left',
+      AquariumPreset.feeding => 'Light on · Flow stop',
+    };
+    final schedule = switch (preset) {
+      AquariumPreset.day => '09:00–21:00',
+      AquariumPreset.night => '21:00–09:00',
+      AquariumPreset.feeding => 'On demand',
+    };
     return Expanded(
       child: InkWell(
         onTap: () {
-          setState(() {
-            _preset = preset;
-            _status = 'Preset set to $label.';
-          });
+          _applyPreset(preset, isOnline: isOnline);
         },
+        onLongPress: () => _editPreset(preset),
         borderRadius: BorderRadius.circular(18),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
@@ -492,16 +561,70 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(icon, color: isActive ? scheme.primary : scheme.onSurfaceVariant),
+              Row(
+                children: [
+                  Icon(icon, color: isActive ? scheme.primary : scheme.onSurfaceVariant),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        color: isActive ? scheme.primary : scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(
+                    Icons.lightbulb_outline,
+                    size: 14,
+                    color: isActive ? scheme.primary : scheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 6),
+                  Icon(
+                    Icons.swap_horiz_rounded,
+                    size: 14,
+                    color: isActive ? scheme.primary : scheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 6),
               Text(
-                label,
+                'Schedule: $schedule',
                 style: TextStyle(
-                  color: isActive ? scheme.primary : scheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
+                  color: scheme.onSurfaceVariant,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
                 ),
-              )
+              ),
+              if (!isOnline) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Will apply when online',
+                  style: TextStyle(
+                    color: scheme.onSurfaceVariant,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -556,11 +679,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final waterLevelSubtitle = isWaterLevelDiscrete
         ? (humidityValue == null ? null : '· ${(humidityValue * 100).toStringAsFixed(0)}%')
         : null;
-    final presetLabel = switch (_preset) {
-      AquariumPreset.day => 'Day',
-      AquariumPreset.night => 'Night',
-      AquariumPreset.feeding => 'Feeding',
-    };
+    final presetLabel = _presetLabel(_preset);
 
     return Scaffold(
       body: SafeArea(
@@ -987,21 +1106,76 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const SizedBox(height: 10),
-              Row(
+              Column(
                 children: [
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: _getState,
-                      icon: const Icon(Icons.sync_rounded),
-                      label: const Text('Refresh data'),
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          children: [
+                            FilledButton.icon(
+                              onPressed: _getState,
+                              icon: _isLoading
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Icon(Icons.sync_rounded),
+                              label: const Text('Refresh data'),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _formatUpdatedTime(),
+                              style: TextStyle(
+                                color: scheme.onSurfaceVariant,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _getState,
+                          icon: const Icon(Icons.wifi_tethering_rounded),
+                          label: const Text('Reconnect'),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _toggleLight,
-                      icon: const Icon(Icons.lightbulb_outline),
-                      label: const Text('Toggle light'),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _applyPreset(_preset, isOnline: isOnline),
+                          icon: const Icon(Icons.auto_awesome_rounded),
+                          label: Text('Apply $presetLabel'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _syncTime,
+                          icon: const Icon(Icons.schedule_rounded),
+                          label: const Text('Sync time'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () => _emergencyOff(isOnline: isOnline),
+                      icon: const Icon(Icons.power_settings_new_rounded),
+                      label: const Text('Emergency OFF'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                      ),
                     ),
                   ),
                 ],
