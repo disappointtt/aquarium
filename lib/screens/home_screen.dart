@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import '../data/history_store.dart';
 import '../main.dart';
 import '../models/history_models.dart';
+import '../widgets/ui_components.dart';
 import 'settings_screen.dart';
 
 class Reading {
@@ -49,7 +50,6 @@ class _HomeScreenState extends State<HomeScreen> {
   String _flowStatus = 'Ready.';
   final List<Reading> _history = [];
   final HistoryStore _historyStore = HistoryStore.instance;
-  HistoryFilter _historyFilter = HistoryFilter.all;
   bool _wasOnline = false;
 
   void _pushHistory(String temp, String hum) {
@@ -81,7 +81,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final demoHum = (40 + Random().nextDouble() * 30).toStringAsFixed(0);
       final demoLed = Random().nextBool() ? 'on' : 'off';
       _updateFromResponse(demoLed, demoTemp, demoHum, isDemo: true);
-      _recordRefresh(ok: true, detail: 'Demo data updated');
+      _recordRefresh(ok: true, message: 'Demo data updated');
       return;
     }
 
@@ -97,14 +97,14 @@ class _HomeScreenState extends State<HomeScreen> {
         final temp = data['temperature']?.toString() ?? '---';
         final hum = data['humidity']?.toString() ?? '---';
         _updateFromResponse(led, temp, hum, isDemo: false);
-        _recordRefresh(ok: true, detail: 'Readings updated');
+        _recordRefresh(ok: true, message: 'Readings updated');
       } else {
         setState(() {
           _status = 'HTTP error: ${response.statusCode}';
           _hasError = true;
         });
         _markConnection(false);
-        _recordRefresh(ok: false, detail: 'HTTP ${response.statusCode}');
+        _recordRefresh(ok: false, message: 'HTTP ${response.statusCode}');
       }
       client.close();
     } catch (e) {
@@ -113,7 +113,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _hasError = true;
       });
       _markConnection(false);
-      _recordRefresh(ok: false, detail: 'Request error');
+      _recordRefresh(ok: false, message: 'Request error');
     } finally {
       if (mounted) {
         setState(() {
@@ -141,9 +141,10 @@ class _HomeScreenState extends State<HomeScreen> {
       });
       _addEvent(
         HistoryEvent(
+          id: _newEventId(),
           time: DateTime.now(),
           title: 'Light ${nextState.toUpperCase()}',
-          detail: 'Demo mode',
+          message: 'Demo mode',
           icon: Icons.lightbulb_rounded,
           category: HistoryCategory.commands,
           ok: true,
@@ -168,9 +169,10 @@ class _HomeScreenState extends State<HomeScreen> {
         }
         _addEvent(
           HistoryEvent(
+            id: _newEventId(),
             time: DateTime.now(),
             title: 'Light ${nextState.toUpperCase()}',
-            detail: 'Applied',
+            message: 'Applied',
             icon: Icons.lightbulb_rounded,
             category: HistoryCategory.commands,
             ok: true,
@@ -184,9 +186,10 @@ class _HomeScreenState extends State<HomeScreen> {
         });
         _addEvent(
           HistoryEvent(
+            id: _newEventId(),
             time: DateTime.now(),
             title: 'Light change failed',
-            detail: 'HTTP ${response.statusCode}',
+            message: 'HTTP ${response.statusCode}',
             icon: Icons.lightbulb_outline,
             category: HistoryCategory.alerts,
             ok: false,
@@ -202,9 +205,10 @@ class _HomeScreenState extends State<HomeScreen> {
       });
       _addEvent(
         HistoryEvent(
+          id: _newEventId(),
           time: DateTime.now(),
           title: 'Light change failed',
-          detail: 'Request error',
+          message: 'Request error',
           icon: Icons.lightbulb_outline,
           category: HistoryCategory.alerts,
           ok: false,
@@ -275,6 +279,11 @@ class _HomeScreenState extends State<HomeScreen> {
     return '$hh:$mm';
   }
 
+  String _newEventId({DateTime? time, String? tag}) {
+    final base = (time ?? DateTime.now()).microsecondsSinceEpoch;
+    return tag == null ? '$base' : '$base-$tag';
+  }
+
   HistoryFlowDirection _mapFlowDirection(FlowDirection direction) {
     return switch (direction) {
       FlowDirection.left => HistoryFlowDirection.left,
@@ -340,19 +349,20 @@ class _HomeScreenState extends State<HomeScreen> {
     if (event.snapshot != null) {
       return '${_formatEventTime(event.time)} - ${_snapshotSubtitle(event.snapshot!)}';
     }
-    if (event.detail != null) {
-      return '${_formatEventTime(event.time)} - ${event.detail}';
+    if (event.message != null) {
+      return '${_formatEventTime(event.time)} - ${event.message}';
     }
     return _formatEventTime(event.time);
   }
 
-  void _recordRefresh({required bool ok, String? detail}) {
+  void _recordRefresh({required bool ok, String? message}) {
     final timestamp = DateTime.now();
     _addEvent(
       HistoryEvent(
+        id: _newEventId(time: timestamp, tag: 'refresh'),
         time: timestamp,
         title: 'Refresh',
-        detail: detail,
+        message: message,
         icon: ok ? Icons.sync_rounded : Icons.sync_problem_rounded,
         category: HistoryCategory.commands,
         ok: ok,
@@ -360,9 +370,10 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     _addEvent(
       HistoryEvent(
+        id: _newEventId(time: timestamp, tag: 'snapshot'),
         time: timestamp,
         title: 'Readings',
-        detail: ok ? null : 'No data',
+        message: ok ? null : 'No data',
         icon: Icons.sensors_rounded,
         category: HistoryCategory.readings,
         ok: ok,
@@ -377,9 +388,10 @@ class _HomeScreenState extends State<HomeScreen> {
     _wasOnline = isOnlineNow;
     _addEvent(
       HistoryEvent(
+        id: _newEventId(),
         time: DateTime.now(),
         title: isOnlineNow ? 'Online' : 'Offline',
-        detail: isOnlineNow ? 'Connection restored' : 'No connection',
+        message: isOnlineNow ? 'Connection restored' : 'No connection',
         icon: isOnlineNow ? Icons.wifi_rounded : Icons.wifi_off_rounded,
         category: HistoryCategory.alerts,
         ok: isOnlineNow,
@@ -444,9 +456,43 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
     if (!hasData && !isOnline) {
-      return Text(offlineText, style: style);
+      return Text(
+        offlineText,
+        style: style,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
     }
-    return Text(valueText, style: style);
+    return Text(
+      valueText,
+      style: style,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+  }
+
+
+  Widget _kvRow({required String label, required String value, TextStyle? style}) {
+    final textStyle = style ?? Theme.of(context).textTheme.bodySmall;
+    return Row(
+      children: [
+        Text(
+          '$label:',
+          style: textStyle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            value,
+            style: textStyle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
   }
 
   void _copyIp(String ip) {
@@ -493,9 +539,10 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     _addEvent(
       HistoryEvent(
+        id: _newEventId(),
         time: DateTime.now(),
         title: 'Preset ${_presetLabel(preset)}',
-        detail: isOnline ? 'Applied' : 'Queued',
+        message: isOnline ? 'Applied' : 'Queued',
         icon: Icons.auto_awesome_rounded,
         category: HistoryCategory.commands,
         ok: true,
@@ -523,9 +570,10 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     _addEvent(
       HistoryEvent(
+        id: _newEventId(),
         time: DateTime.now(),
         title: 'Sync time',
-        detail: 'Applied',
+        message: 'Applied',
         icon: Icons.schedule_rounded,
         category: HistoryCategory.commands,
         ok: true,
@@ -542,9 +590,10 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     _addEvent(
       HistoryEvent(
+        id: _newEventId(),
         time: DateTime.now(),
         title: 'Emergency OFF',
-        detail: isOnline ? 'Sent' : 'Queued',
+        message: isOnline ? 'Sent' : 'Queued',
         icon: Icons.power_settings_new_rounded,
         category: HistoryCategory.commands,
         ok: true,
@@ -572,9 +621,10 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     _addEvent(
       HistoryEvent(
+        id: _newEventId(),
         time: DateTime.now(),
         title: 'Flow ${_flowLabel(direction)}',
-        detail: 'Applied',
+        message: 'Applied',
         icon: Icons.swap_horiz_rounded,
         category: HistoryCategory.commands,
         ok: true,
@@ -596,6 +646,7 @@ class _HomeScreenState extends State<HomeScreen> {
       borderRadius: BorderRadius.circular(14),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10),
+        constraints: const BoxConstraints(minHeight: 72),
         decoration: BoxDecoration(
           color: isActive ? activeColor.withOpacity(0.12) : scheme.surface,
           borderRadius: BorderRadius.circular(14),
@@ -612,39 +663,94 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 6),
             Text(
               _flowLabel(direction),
-              style: TextStyle(
-                color: isActive ? activeColor : baseColor,
-                fontWeight: FontWeight.w600,
-                fontSize: 12,
-              ),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: isActive ? activeColor : baseColor,
+                  ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
       ),
     );
     return Expanded(
-      child: isEnabled ? content : Tooltip(message: 'Нет соединения', child: content),
+      child: isEnabled ? content : Tooltip(message: 'Not available', child: content),
     );
   }
 
   Widget _buildInfoBanner({required IconData icon, required String text, required Color color}) {
-    return Container(
-      width: double.infinity,
+    return InfoCard(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withOpacity(0.2)),
-      ),
       child: Row(
         children: [
           Icon(icon, color: color),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
               text,
-              style: TextStyle(color: color, fontWeight: FontWeight.w600),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showErrorDetails(String message) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Error details'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorBanner(String message) {
+    return InfoCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.warning_amber_rounded, color: Colors.orange),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  message,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: Colors.orange),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton(
+                onPressed: () => _showErrorDetails(message),
+                child: const Text('Details'),
+              ),
+              FilledButton(
+                onPressed: _getState,
+                child: const Text('Retry'),
+              ),
+            ],
           ),
         ],
       ),
@@ -652,21 +758,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _surfaceCard({required Widget child}) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      decoration: BoxDecoration(
-        color: scheme.surface,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: child,
-    );
+    return InfoCard(padding: EdgeInsets.zero, child: child);
   }
 
   Widget _metricCard({
@@ -682,7 +774,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final accentColor = accent ?? scheme.primary;
     return _surfaceCard(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -690,12 +782,15 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Icon(icon, color: accentColor),
                 const SizedBox(width: 8),
-                Text(
-                  title,
-                  style: TextStyle(
-                    color: scheme.onSurfaceVariant,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
+                Expanded(
+                  child: Text(
+                    title,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: scheme.onSurfaceVariant),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
@@ -706,11 +801,12 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 6),
               Text(
                 subtitle,
-                style: TextStyle(
-                  color: scheme.onSurfaceVariant,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
             if (updated != null || trend != null) ...[
@@ -721,21 +817,23 @@ class _HomeScreenState extends State<HomeScreen> {
                     Expanded(
                       child: Text(
                         updated,
-                        style: TextStyle(
-                          color: scheme.onSurfaceVariant,
-                          fontSize: 11,
-                        ),
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: scheme.onSurfaceVariant),
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   if (trend != null)
                     Text(
                       trend,
-                      style: TextStyle(
-                        color: scheme.onSurfaceVariant,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelMedium
+                          ?.copyWith(color: scheme.primary),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                 ],
               ),
@@ -848,57 +946,28 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  List<HistoryEvent> _filteredEvents(List<HistoryEvent> events) {
-    return events.where((event) {
-      return switch (_historyFilter) {
-        HistoryFilter.all => true,
-        HistoryFilter.commands => event.category == HistoryCategory.commands,
-        HistoryFilter.alerts => event.category == HistoryCategory.alerts,
-        HistoryFilter.readings => event.category == HistoryCategory.readings,
-      };
-    }).toList();
-  }
-
   Widget _historyList() {
-    final scheme = Theme.of(context).colorScheme;
     return AnimatedBuilder(
       animation: _historyStore,
       builder: (context, _) {
-        final items = _filteredEvents(_historyStore.events).take(3).toList();
+        final items = _historyStore.getRecent(limit: 3);
         if (items.isEmpty) {
           return Text(
             'No events yet. Try Refresh or apply a preset.',
-            style: TextStyle(color: scheme.onSurfaceVariant),
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           );
         }
         return Column(
           children: items
               .map(
-                (event) => ListTile(
-                  dense: true,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 0),
-                  leading: CircleAvatar(
-                    radius: 16,
-                    backgroundColor: (event.ok ? Colors.green : Colors.red).withOpacity(0.12),
-                    child: Icon(
-                      event.icon,
-                      color: event.ok ? Colors.green : Colors.red,
-                      size: 18,
-                    ),
-                  ),
-                  title: Text(event.title),
-                  subtitle: Text(
-                _eventSubtitle(event),
-                style: TextStyle(color: scheme.onSurfaceVariant),
-              ),
-                  trailing: Text(
-                    event.ok ? 'OK' : 'Fail',
-                    style: TextStyle(
-                      color: event.ok ? Colors.green : Colors.red,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
-                    ),
-                  ),
+                (event) => HistoryItemTile(
+                  event: event,
+                  subtitle: _eventSubtitle(event),
                 ),
               )
               .toList(),
@@ -935,20 +1004,19 @@ class _HomeScreenState extends State<HomeScreen> {
         child: RefreshIndicator(
           onRefresh: _getState,
           child: ListView(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(16),
             children: [
               Row(
                 children: [
-                  const Spacer(),
-                  Text(
-                    'Aquarium',
-                    style: TextStyle(
-                      color: scheme.onSurface,
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
+                  Expanded(
+                    child: Text(
+                      'Aquarium',
+                      style: Theme.of(context).textTheme.titleMedium,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
                     ),
                   ),
-                  const Spacer(),
                   if (appState.isDemo)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -958,10 +1026,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       child: Text(
                         'Demo',
-                        style: TextStyle(
-                          color: scheme.primary,
-                          fontWeight: FontWeight.w700,
-                        ),
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelMedium
+                            ?.copyWith(color: scheme.primary),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                 ],
@@ -999,27 +1069,29 @@ class _HomeScreenState extends State<HomeScreen> {
                           children: [
                             Text(
                               'Tropical Tank',
-                              style: TextStyle(
-                                color: scheme.onSurface,
-                                fontSize: 22,
-                                fontWeight: FontWeight.w700,
-                              ),
+                              style: Theme.of(context).textTheme.titleMedium,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            const SizedBox(height: 10),
+                            const SizedBox(height: 8),
                             Text(
                               'Status: ${ledOn ? "Lights on" : "Lights off"}',
-                              style: TextStyle(
-                                color: scheme.onSurfaceVariant,
-                                fontSize: 14,
-                              ),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(color: scheme.onSurfaceVariant),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                             const SizedBox(height: 6),
                             Text(
                               'Preset: $presetLabel',
-                              style: TextStyle(
-                                color: scheme.onSurfaceVariant,
-                                fontSize: 14,
-                              ),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(color: scheme.onSurfaceVariant),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ],
                         ),
@@ -1038,10 +1110,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(width: 8),
                   Text(
                     isOnline ? 'Online' : 'Offline',
-                    style: TextStyle(
-                      color: isOnline ? Colors.green : Colors.orange,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: isOnline ? Colors.green : Colors.orange),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   const Spacer(),
                   if (!isOnline)
@@ -1056,15 +1130,22 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 6),
                 Text(
                   'Reason: ${_offlineReason(_status)}',
-                  style: TextStyle(
-                    color: scheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
                 Text(
                   _formatLastOnline(),
-                  style: TextStyle(color: scheme.onSurfaceVariant),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
               const SizedBox(height: 6),
@@ -1074,6 +1155,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Text(
                       'IP: $espIp',
                       style: TextStyle(color: scheme.onSurfaceVariant),
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -1090,11 +1172,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 12),
               if (_hasError)
-                _buildInfoBanner(
-                  icon: Icons.warning_amber_rounded,
-                  text: _status,
-                  color: Colors.orange,
-                )
+                _buildErrorBanner(_status)
               else if (_dangerTemp)
                 _buildInfoBanner(
                   icon: Icons.thermostat,
@@ -1163,7 +1241,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Expanded(
                     child: _surfaceCard(
                       child: Padding(
-                        padding: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.all(12),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -1171,20 +1249,23 @@ class _HomeScreenState extends State<HomeScreen> {
                               children: [
                                 Icon(Icons.swap_horiz_rounded, color: scheme.primary),
                                 const SizedBox(width: 8),
-                                Text(
-                                  'Flow direction',
-                                  style: TextStyle(
-                                    color: scheme.onSurfaceVariant,
-                                    fontWeight: FontWeight.w600,
+                                Expanded(
+                                  child: Text(
+                                    'Flow direction',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(color: scheme.onSurfaceVariant),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
-                                const Spacer(),
+                                const SizedBox(width: 8),
                                 Text(
                                   _flowLabel(_flowDirection),
-                                  style: TextStyle(
-                                    color: scheme.onSurface,
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                                  style: Theme.of(context).textTheme.bodyMedium,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ],
                             ),
@@ -1213,10 +1294,12 @@ class _HomeScreenState extends State<HomeScreen> {
                             const SizedBox(height: 8),
                             Text(
                               _flowStatus,
-                              style: TextStyle(
-                                color: scheme.onSurfaceVariant,
-                                fontSize: 12,
-                              ),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(color: scheme.onSurfaceVariant),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ],
                         ),
@@ -1225,136 +1308,106 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: _surfaceCard(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(Icons.lightbulb_rounded, color: Colors.amber),
-                                const SizedBox(width: 8),
-                                Text(
+                    child: InfoCard(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.lightbulb_rounded, color: Colors.amber),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
                                   'Lighting',
-                                  style: TextStyle(
-                                    color: scheme.onSurfaceVariant,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(color: scheme.onSurfaceVariant),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                const Spacer(),
-                                Text(
-                                  _isLightingAuto ? 'Auto' : 'Manual',
-                                  style: TextStyle(
-                                    color: scheme.onSurface,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Requested: $requestedLedOn',
-                                        style: TextStyle(
-                                          color: scheme.onSurface,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        'Actual: ${ledOn ? "On" : "Off"}',
-                                        style: TextStyle(
-                                          color: scheme.onSurfaceVariant,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const Spacer(),
-                                Switch(
-                                  value: ledOn,
-                                  onChanged: (_) => _toggleLight(),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    _lightingStatus,
-                                    style: TextStyle(
-                                      color: scheme.onSurfaceVariant,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ),
-                                SegmentedButton<bool>(
-                                  segments: const [
-                                    ButtonSegment(
-                                      value: false,
-                                      label: Text('Manual'),
-                                      icon: Icon(Icons.tune_rounded),
-                                    ),
-                                    ButtonSegment(
-                                      value: true,
-                                      label: Text('Auto'),
-                                      icon: Icon(Icons.schedule_rounded),
-                                    ),
-                                  ],
-                                  selected: {_isLightingAuto},
-                                  onSelectionChanged: (selection) {
+                              ),
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                width: 120,
+                                child: ToggleButtons(
+                                  textStyle: Theme.of(context).textTheme.labelMedium,
+                                  isSelected: [_isLightingAuto == false, _isLightingAuto == true],
+                                  onPressed: (index) {
                                     setState(() {
-                                      _isLightingAuto = selection.first;
+                                      _isLightingAuto = index == 1;
                                     });
                                   },
+                                  constraints: const BoxConstraints(minHeight: 32, minWidth: 52),
+                                  children: const [
+                                    Text('Man', maxLines: 1, overflow: TextOverflow.ellipsis),
+                                    Text('Auto', maxLines: 1, overflow: TextOverflow.ellipsis),
+                                  ],
                                 ),
-                              ],
-                            ),
-                          ],
-                        ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _kvRow(
+                                      label: 'Requested',
+                                      value: requestedLedOn,
+                                      style: Theme.of(context).textTheme.bodySmall,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    _kvRow(
+                                      label: 'Actual',
+                                      value: ledOn ? 'On' : 'Off',
+                                      style: Theme.of(context).textTheme.bodySmall,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Switch(
+                                value: ledOn,
+                                onChanged: (_) => _toggleLight(),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            _lightingStatus,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(color: scheme.onSurfaceVariant),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
                       ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 18),
-              Text(
-                'Presets',
-                style: TextStyle(
-                  color: scheme.onSurface,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 16),
+              const SectionHeader(title: 'Presets'),
+              const SizedBox(height: 8),
               Row(
                 children: [
                   _presetButton(AquariumPreset.day, 'Day', Icons.wb_sunny_rounded),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
                   _presetButton(AquariumPreset.night, 'Night', Icons.nights_stay_rounded),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
                   _presetButton(AquariumPreset.feeding, 'Feeding', Icons.restaurant_rounded),
                 ],
               ),
               const SizedBox(height: 16),
-              Text(
-                'Quick actions',
-                style: TextStyle(
-                  color: scheme.onSurface,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 10),
+              const SectionHeader(title: 'Quick actions'),
+              const SizedBox(height: 8),
               Column(
                 children: [
                   Row(
@@ -1384,7 +1437,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ],
                         ),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: _getState,
@@ -1394,7 +1447,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
                   Row(
                     children: [
                       Expanded(
@@ -1404,7 +1457,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           label: Text('Apply $presetLabel'),
                         ),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: _syncTime,
@@ -1414,7 +1467,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
@@ -1429,47 +1482,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  Text(
-                    'History',
-                    style: TextStyle(
-                      color: scheme.onSurface,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const Spacer(),
-                  TextButton.icon(
-                    onPressed: widget.onOpenHistory,
-                    icon: const Icon(Icons.history_rounded, size: 18),
-                    label: const Text('Open history'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: SegmentedButton<HistoryFilter>(
-                      segments: HistoryFilter.values
-                          .map(
-                            (filter) => ButtonSegment(
-                              value: filter,
-                              label: Text(historyFilterLabel(filter)),
-                            ),
-                          )
-                          .toList(),
-                      selected: {_historyFilter},
-                      onSelectionChanged: (selection) {
-                        setState(() {
-                          _historyFilter = selection.first;
-                        });
-                      },
-                    ),
-                  ),
-                ],
+              const SizedBox(height: 16),
+              SectionHeader(
+                title: 'History',
+                trailing: TextButton.icon(
+                  onPressed: widget.onOpenHistory,
+                  icon: const Icon(Icons.history_rounded, size: 18),
+                  label: const Text('Open history', maxLines: 1, overflow: TextOverflow.ellipsis),
+                ),
               ),
               const SizedBox(height: 8),
               _historyList(),

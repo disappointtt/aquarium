@@ -35,18 +35,20 @@ class HistorySnapshot {
 }
 
 class HistoryEvent {
+  final String id;
   final DateTime time;
   final String title;
-  final String? detail;
+  final String? message;
   final IconData icon;
   final HistoryCategory category;
   final bool ok;
   final HistorySnapshot? snapshot;
 
   const HistoryEvent({
+    required this.id,
     required this.time,
     required this.title,
-    this.detail,
+    this.message,
     required this.icon,
     required this.category,
     required this.ok,
@@ -60,5 +62,14 @@ String historyFilterLabel(HistoryFilter filter) {
     HistoryFilter.commands => 'Commands',
     HistoryFilter.alerts => 'Alerts',
     HistoryFilter.readings => 'Readings',
+  };
+}
+
+String historyFilterShortLabel(HistoryFilter filter) {
+  return switch (filter) {
+    HistoryFilter.all => 'All',
+    HistoryFilter.commands => 'Cmd',
+    HistoryFilter.alerts => 'Alerts',
+    HistoryFilter.readings => 'Reads',
   };
 }

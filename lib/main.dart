@@ -109,6 +109,13 @@ class MyApp extends StatelessWidget {
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
+      textTheme: const TextTheme(
+        titleMedium: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, height: 1.2),
+        titleSmall: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, height: 1.2),
+        bodyMedium: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3),
+        bodySmall: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, height: 1.3),
+        labelMedium: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, height: 1.1),
+      ),
       scaffoldBackgroundColor: scheme.surface,
       cardColor: scheme.surface,
       snackBarTheme: SnackBarThemeData(
