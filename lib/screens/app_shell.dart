@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'aquariums_screen.dart';
+import 'history_screen.dart';
 import 'home_screen.dart';
 import 'settings_screen.dart';
 
@@ -14,11 +15,24 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   int _index = 0;
 
-  final List<Widget> _pages = const [
-    HomeScreen(),
-    AquariumsScreen(),
-    SettingsScreen(),
-  ];
+  late final List<Widget> _pages;
+
+  @override
+  void initState() {
+    super.initState();
+    _pages = [
+      HomeScreen(onOpenHistory: _openHistoryTab),
+      const AquariumsScreen(),
+      const HistoryScreen(),
+      const SettingsScreen(),
+    ];
+  }
+
+  void _openHistoryTab() {
+    setState(() {
+      _index = 2;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -60,6 +74,10 @@ class _AppShellState extends State<AppShell> {
               NavigationDestination(
                 icon: Icon(Icons.water_rounded),
                 label: 'Aquarium',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.history_rounded),
+                label: 'History',
               ),
               NavigationDestination(
                 icon: Icon(Icons.settings_rounded),

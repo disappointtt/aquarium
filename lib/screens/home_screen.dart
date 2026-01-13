@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
+import '../data/history_store.dart';
 import '../main.dart';
+import '../models/history_models.dart';
 import 'settings_screen.dart';
 
 class Reading {
@@ -20,30 +22,10 @@ enum AquariumPreset { day, night, feeding }
 
 enum FlowDirection { left, stop, right }
 
-enum HistoryFilter { all, commands, alerts, readings }
-
-enum HistoryCategory { commands, alerts, readings }
-
-class HistoryEvent {
-  final DateTime time;
-  final String title;
-  final String? detail;
-  final IconData icon;
-  final HistoryCategory category;
-  final bool ok;
-
-  HistoryEvent({
-    required this.time,
-    required this.title,
-    this.detail,
-    required this.icon,
-    required this.category,
-    required this.ok,
-  });
-}
-
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.onOpenHistory});
+
+  final VoidCallback? onOpenHistory;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -66,7 +48,7 @@ class _HomeScreenState extends State<HomeScreen> {
   FlowDirection _flowDirection = FlowDirection.stop;
   String _flowStatus = 'Ready.';
   final List<Reading> _history = [];
-  final List<HistoryEvent> _events = [];
+  final HistoryStore _historyStore = HistoryStore.instance;
   HistoryFilter _historyFilter = HistoryFilter.all;
   bool _wasOnline = false;
 
@@ -82,10 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _addEvent(HistoryEvent event) {
-    _events.insert(0, event);
-    if (_events.length > 50) {
-      _events.removeLast();
-    }
+    _historyStore.addEvent(event);
   }
 
   Future<void> _getState() async {
@@ -808,17 +787,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  String _filterLabel(HistoryFilter filter) {
-    return switch (filter) {
-      HistoryFilter.all => 'All',
-      HistoryFilter.commands => 'Commands',
-      HistoryFilter.alerts => 'Alerts',
-      HistoryFilter.readings => 'Readings',
-    };
-  }
-
-  List<HistoryEvent> _filteredEvents() {
-    return _events.where((event) {
+  List<HistoryEvent> _filteredEvents(List<HistoryEvent> events) {
+    return events.where((event) {
       return switch (_historyFilter) {
         HistoryFilter.all => true,
         HistoryFilter.commands => event.category == HistoryCategory.commands,
@@ -828,103 +798,51 @@ class _HomeScreenState extends State<HomeScreen> {
     }).toList();
   }
 
-  void _exportEvents({required bool asJson}) {
-    final items = _events
-        .map(
-          (e) => {
-            'time': e.time.toIso8601String(),
-            'title': e.title,
-            'detail': e.detail ?? '',
-            'category': e.category.name,
-            'result': e.ok ? 'OK' : 'Fail',
-          },
-        )
-        .toList();
-    final payload = asJson
-        ? jsonEncode(items)
-        : [
-            'time,title,detail,category,result',
-            ...items.map(
-              (e) =>
-                  '"${e['time']}","${e['title']}","${e['detail']}","${e['category']}","${e['result']}"',
-            ),
-          ].join('\n');
-    Clipboard.setData(ClipboardData(text: payload));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Exported ${asJson ? 'JSON' : 'CSV'} to clipboard.')),
-    );
-  }
-
-  void _showExportDialog() {
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Export'),
-        content: const Text('Copy events to clipboard.'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _exportEvents(asJson: true);
-            },
-            child: const Text('JSON'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _exportEvents(asJson: false);
-            },
-            child: const Text('CSV'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _historyList() {
     final scheme = Theme.of(context).colorScheme;
-    final items = _filteredEvents();
-    if (items.isEmpty) {
-      return Text(
-        'No events yet. Try Refresh or apply a preset.',
-        style: TextStyle(color: scheme.onSurfaceVariant),
-      );
-    }
-    return Column(
-      children: items
-          .map(
-            (event) => ListTile(
-              dense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 0),
-              leading: CircleAvatar(
-                radius: 16,
-                backgroundColor: (event.ok ? Colors.green : Colors.red).withOpacity(0.12),
-                child: Icon(
-                  event.icon,
-                  color: event.ok ? Colors.green : Colors.red,
-                  size: 18,
+    return AnimatedBuilder(
+      animation: _historyStore,
+      builder: (context, _) {
+        final items = _filteredEvents(_historyStore.events).take(3).toList();
+        if (items.isEmpty) {
+          return Text(
+            'No events yet. Try Refresh or apply a preset.',
+            style: TextStyle(color: scheme.onSurfaceVariant),
+          );
+        }
+        return Column(
+          children: items
+              .map(
+                (event) => ListTile(
+                  dense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 0),
+                  leading: CircleAvatar(
+                    radius: 16,
+                    backgroundColor: (event.ok ? Colors.green : Colors.red).withOpacity(0.12),
+                    child: Icon(
+                      event.icon,
+                      color: event.ok ? Colors.green : Colors.red,
+                      size: 18,
+                    ),
+                  ),
+                  title: Text(event.title),
+                  subtitle: Text(
+                    '${_formatEventTime(event.time)}${event.detail != null ? ' - ${event.detail}' : ''}',
+                    style: TextStyle(color: scheme.onSurfaceVariant),
+                  ),
+                  trailing: Text(
+                    event.ok ? 'OK' : 'Fail',
+                    style: TextStyle(
+                      color: event.ok ? Colors.green : Colors.red,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
                 ),
-              ),
-              title: Text(event.title),
-              subtitle: Text(
-                '${_formatEventTime(event.time)}${event.detail != null ? ' · ${event.detail}' : ''}',
-                style: TextStyle(color: scheme.onSurfaceVariant),
-              ),
-              trailing: Text(
-                event.ok ? 'OK' : 'Fail',
-                style: TextStyle(
-                  color: event.ok ? Colors.green : Colors.red,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-          )
-          .toList(),
+              )
+              .toList(),
+        );
+      },
     );
   }
 
@@ -1451,13 +1369,23 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
               const SizedBox(height: 20),
-              Text(
-                'History',
-                style: TextStyle(
-                  color: scheme.onSurface,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
+              Row(
+                children: [
+                  Text(
+                    'History',
+                    style: TextStyle(
+                      color: scheme.onSurface,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Spacer(),
+                  TextButton.icon(
+                    onPressed: widget.onOpenHistory,
+                    icon: const Icon(Icons.history_rounded, size: 18),
+                    label: const Text('Open history'),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
               Row(
@@ -1468,7 +1396,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           .map(
                             (filter) => ButtonSegment(
                               value: filter,
-                              label: Text(_filterLabel(filter)),
+                              label: Text(historyFilterLabel(filter)),
                             ),
                           )
                           .toList(),
@@ -1479,12 +1407,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         });
                       },
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  OutlinedButton.icon(
-                    onPressed: _showExportDialog,
-                    icon: const Icon(Icons.download_rounded),
-                    label: const Text('Export'),
                   ),
                 ],
               ),
