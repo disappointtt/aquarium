@@ -32,7 +32,9 @@ class _HomeScreenState extends State<HomeScreen> {
   String _status = 'Waiting for data. Pull to refresh.';
   bool _hasError = false;
   bool _dangerTemp = false;
+  bool _isLoading = false;
   DateTime? _lastOnlineAt;
+  DateTime? _lastUpdatedAt;
   AquariumPreset _preset = AquariumPreset.day;
   final List<Reading> _history = [];
 
@@ -53,6 +55,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _status = 'Fetching latest readings...';
       _hasError = false;
+      _isLoading = true;
     });
 
     if (appState.isDemo) {
@@ -87,6 +90,12 @@ class _HomeScreenState extends State<HomeScreen> {
         _status = 'Request error: ${e.toString()}';
         _hasError = true;
       });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -135,6 +144,8 @@ class _HomeScreenState extends State<HomeScreen> {
       _dangerTemp = _isDangerTemp(temp);
       _pushHistory(temp, hum);
       _lastOnlineAt = DateTime.now();
+      _lastUpdatedAt = DateTime.now();
+      _isLoading = false;
     });
   }
 
@@ -168,6 +179,76 @@ class _HomeScreenState extends State<HomeScreen> {
     if (diff.inHours < 1) return 'Last online: ${diff.inMinutes} min ago';
     if (diff.inHours < 24) return 'Last online: ${diff.inHours} hr ago';
     return 'Last online: ${diff.inDays} days ago';
+  }
+
+  String _formatUpdatedTime() {
+    final updated = _lastUpdatedAt;
+    if (updated == null) return 'Updated —';
+    final hh = updated.hour.toString().padLeft(2, '0');
+    final mm = updated.minute.toString().padLeft(2, '0');
+    return 'Updated $hh:$mm';
+  }
+
+  String? _trendText({required String currentValue, required bool isTemperature}) {
+    final current = double.tryParse(currentValue);
+    if (current == null) return null;
+    if (_history.length < 2) return null;
+    final cutoff = DateTime.now().subtract(const Duration(hours: 1));
+    Reading? past;
+    for (final reading in _history) {
+      if (reading.time.isBefore(cutoff) || reading.time.isAtSameMomentAs(cutoff)) {
+        past = reading;
+        break;
+      }
+    }
+    if (past == null) return null;
+    final pastValue = double.tryParse(isTemperature ? past.temperature : past.humidity);
+    if (pastValue == null) return null;
+    final diff = current - pastValue;
+    if (diff.abs() < 0.05) return '—';
+    final arrow = diff > 0 ? '▲' : '▼';
+    final formatted = isTemperature ? diff.abs().toStringAsFixed(1) : diff.abs().toStringAsFixed(0);
+    final unit = isTemperature ? '°C' : '%';
+    final sign = diff > 0 ? '+' : '-';
+    return '$arrow $sign$formatted$unit';
+  }
+
+  Widget _metricValueWidget({
+    required bool isLoading,
+    required bool hasData,
+    required bool isOnline,
+    required TextStyle style,
+    required String valueText,
+    required String offlineText,
+  }) {
+    if (isLoading) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            height: 16,
+            width: 90,
+            decoration: BoxDecoration(
+              color: style.color?.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            height: 12,
+            width: 60,
+            decoration: BoxDecoration(
+              color: style.color?.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ],
+      );
+    }
+    if (!hasData && !isOnline) {
+      return Text(offlineText, style: style);
+    }
+    return Text(valueText, style: style);
   }
 
   void _copyIp(String ip) {
@@ -227,8 +308,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _metricCard({
     required String title,
-    required String value,
+    required Widget value,
     required IconData icon,
+    String? subtitle,
+    String? updated,
+    String? trend,
     Color? accent,
   }) {
     final scheme = Theme.of(context).colorScheme;
@@ -254,14 +338,45 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            Text(
-              value,
-              style: TextStyle(
-                color: scheme.onSurface,
-                fontSize: 24,
-                fontWeight: FontWeight.w700,
+            value,
+            if (subtitle != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  color: scheme.onSurfaceVariant,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-            ),
+            ],
+            if (updated != null || trend != null) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  if (updated != null)
+                    Expanded(
+                      child: Text(
+                        updated,
+                        style: TextStyle(
+                          color: scheme.onSurfaceVariant,
+                          fontSize: 11,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  if (trend != null)
+                    Text(
+                      trend,
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -340,6 +455,16 @@ class _HomeScreenState extends State<HomeScreen> {
     final isOnline = !_hasError && _temperature != '---';
     final espIp = appState.espIp;
     final ledOn = _ledState.toLowerCase() == 'on';
+    final tempTrend = _trendText(currentValue: _temperature, isTemperature: true);
+    final humTrend = _trendText(currentValue: _humidity, isTemperature: false);
+    final humidityValue = double.tryParse(_humidity);
+    final isWaterLevelDiscrete = humidityValue != null && (humidityValue == 0 || humidityValue == 1);
+    final waterLevelLabel = isWaterLevelDiscrete
+        ? (humidityValue == 0 ? 'Low' : 'OK')
+        : (_humidity == '---' ? '---' : '$_humidity %');
+    final waterLevelSubtitle = isWaterLevelDiscrete
+        ? (humidityValue == null ? null : '· ${(humidityValue * 100).toStringAsFixed(0)}%')
+        : null;
     final presetLabel = switch (_preset) {
       AquariumPreset.day => 'Day',
       AquariumPreset.night => 'Night',
@@ -534,13 +659,40 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   _metricCard(
                     title: 'Temperature',
-                    value: '$_temperature C',
+                    value: _metricValueWidget(
+                      isLoading: _isLoading,
+                      hasData: _temperature != '---',
+                      isOnline: isOnline,
+                      valueText: '$_temperature C',
+                      offlineText: 'Нет данных (offline)',
+                      style: TextStyle(
+                        color: scheme.onSurface,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    updated: _formatUpdatedTime(),
+                    trend: tempTrend != null ? '$tempTrend за 1ч' : null,
                     icon: Icons.thermostat_rounded,
                     accent: Colors.deepOrange,
                   ),
                   _metricCard(
                     title: 'Water level',
-                    value: '$_humidity %',
+                    value: _metricValueWidget(
+                      isLoading: _isLoading,
+                      hasData: _humidity != '---',
+                      isOnline: isOnline,
+                      valueText: waterLevelLabel,
+                      offlineText: 'Нет данных (offline)',
+                      style: TextStyle(
+                        color: scheme.onSurface,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    subtitle: waterLevelSubtitle,
+                    updated: _formatUpdatedTime(),
+                    trend: !isWaterLevelDiscrete && humTrend != null ? '$humTrend за 1ч' : null,
                     icon: Icons.water_drop_rounded,
                     accent: Colors.blue,
                   ),
