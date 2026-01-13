@@ -20,6 +20,28 @@ enum AquariumPreset { day, night, feeding }
 
 enum FlowDirection { left, stop, right }
 
+enum HistoryFilter { all, commands, alerts, readings }
+
+enum HistoryCategory { commands, alerts, readings }
+
+class HistoryEvent {
+  final DateTime time;
+  final String title;
+  final String? detail;
+  final IconData icon;
+  final HistoryCategory category;
+  final bool ok;
+
+  HistoryEvent({
+    required this.time,
+    required this.title,
+    this.detail,
+    required this.icon,
+    required this.category,
+    required this.ok,
+  });
+}
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -44,6 +66,9 @@ class _HomeScreenState extends State<HomeScreen> {
   FlowDirection _flowDirection = FlowDirection.stop;
   String _flowStatus = 'Ready.';
   final List<Reading> _history = [];
+  final List<HistoryEvent> _events = [];
+  HistoryFilter _historyFilter = HistoryFilter.all;
+  bool _wasOnline = false;
 
   void _pushHistory(String temp, String hum) {
     if (temp == '---' || hum == '---') return;
@@ -53,6 +78,13 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     if (_history.length > 20) {
       _history.removeLast();
+    }
+  }
+
+  void _addEvent(HistoryEvent event) {
+    _events.insert(0, event);
+    if (_events.length > 50) {
+      _events.removeLast();
     }
   }
 
@@ -70,6 +102,16 @@ class _HomeScreenState extends State<HomeScreen> {
       final demoHum = (40 + Random().nextDouble() * 30).toStringAsFixed(0);
       final demoLed = Random().nextBool() ? 'on' : 'off';
       _updateFromResponse(demoLed, demoTemp, demoHum, isDemo: true);
+      _addEvent(
+        HistoryEvent(
+          time: DateTime.now(),
+          title: 'Refresh',
+          detail: 'Demo data updated',
+          icon: Icons.sync_rounded,
+          category: HistoryCategory.readings,
+          ok: true,
+        ),
+      );
       return;
     }
 
@@ -85,11 +127,32 @@ class _HomeScreenState extends State<HomeScreen> {
         final temp = data['temperature']?.toString() ?? '---';
         final hum = data['humidity']?.toString() ?? '---';
         _updateFromResponse(led, temp, hum, isDemo: false);
+        _addEvent(
+          HistoryEvent(
+            time: DateTime.now(),
+            title: 'Refresh',
+            detail: 'Readings updated',
+            icon: Icons.sync_rounded,
+            category: HistoryCategory.readings,
+            ok: true,
+          ),
+        );
       } else {
         setState(() {
           _status = 'HTTP error: ${response.statusCode}';
           _hasError = true;
         });
+        _markConnection(false);
+        _addEvent(
+          HistoryEvent(
+            time: DateTime.now(),
+            title: 'Refresh failed',
+            detail: 'HTTP ${response.statusCode}',
+            icon: Icons.sync_problem_rounded,
+            category: HistoryCategory.alerts,
+            ok: false,
+          ),
+        );
       }
       client.close();
     } catch (e) {
@@ -97,6 +160,17 @@ class _HomeScreenState extends State<HomeScreen> {
         _status = 'Request error: ${e.toString()}';
         _hasError = true;
       });
+      _markConnection(false);
+      _addEvent(
+        HistoryEvent(
+          time: DateTime.now(),
+          title: 'Refresh failed',
+          detail: 'Request error',
+          icon: Icons.sync_problem_rounded,
+          category: HistoryCategory.alerts,
+          ok: false,
+        ),
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -122,6 +196,16 @@ class _HomeScreenState extends State<HomeScreen> {
         _requestedLedState = null;
         _lightingStatus = 'Applied.';
       });
+      _addEvent(
+        HistoryEvent(
+          time: DateTime.now(),
+          title: 'Light ${nextState.toUpperCase()}',
+          detail: 'Demo mode',
+          icon: Icons.lightbulb_rounded,
+          category: HistoryCategory.commands,
+          ok: true,
+        ),
+      );
       return;
     }
 
@@ -139,12 +223,32 @@ class _HomeScreenState extends State<HomeScreen> {
             _lightingStatus = 'Applied.';
           });
         }
+        _addEvent(
+          HistoryEvent(
+            time: DateTime.now(),
+            title: 'Light ${nextState.toUpperCase()}',
+            detail: 'Applied',
+            icon: Icons.lightbulb_rounded,
+            category: HistoryCategory.commands,
+            ok: true,
+          ),
+        );
       } else {
         setState(() {
           _status = 'HTTP error: ${response.statusCode}';
           _hasError = true;
           _lightingStatus = 'Failed to apply.';
         });
+        _addEvent(
+          HistoryEvent(
+            time: DateTime.now(),
+            title: 'Light change failed',
+            detail: 'HTTP ${response.statusCode}',
+            icon: Icons.lightbulb_outline,
+            category: HistoryCategory.alerts,
+            ok: false,
+          ),
+        );
       }
       client.close();
     } catch (e) {
@@ -153,6 +257,16 @@ class _HomeScreenState extends State<HomeScreen> {
         _hasError = true;
         _lightingStatus = 'Failed to apply.';
       });
+      _addEvent(
+        HistoryEvent(
+          time: DateTime.now(),
+          title: 'Light change failed',
+          detail: 'Request error',
+          icon: Icons.lightbulb_outline,
+          category: HistoryCategory.alerts,
+          ok: false,
+        ),
+      );
     }
   }
 
@@ -169,6 +283,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _lastUpdatedAt = DateTime.now();
       _isLoading = false;
     });
+    _markConnection(true);
   }
 
   bool _isDangerTemp(String temp) {
@@ -209,6 +324,27 @@ class _HomeScreenState extends State<HomeScreen> {
     final hh = updated.hour.toString().padLeft(2, '0');
     final mm = updated.minute.toString().padLeft(2, '0');
     return 'Updated $hh:$mm';
+  }
+
+  String _formatEventTime(DateTime time) {
+    final hh = time.hour.toString().padLeft(2, '0');
+    final mm = time.minute.toString().padLeft(2, '0');
+    return '$hh:$mm';
+  }
+
+  void _markConnection(bool isOnlineNow) {
+    if (isOnlineNow == _wasOnline) return;
+    _wasOnline = isOnlineNow;
+    _addEvent(
+      HistoryEvent(
+        time: DateTime.now(),
+        title: isOnlineNow ? 'Online' : 'Offline',
+        detail: isOnlineNow ? 'Connection restored' : 'No connection',
+        icon: isOnlineNow ? Icons.wifi_rounded : Icons.wifi_off_rounded,
+        category: HistoryCategory.alerts,
+        ok: isOnlineNow,
+      ),
+    );
   }
 
   String? _trendText({required String currentValue, required bool isTemperature}) {
@@ -315,6 +451,16 @@ class _HomeScreenState extends State<HomeScreen> {
           : 'Preset queued: ${_presetLabel(preset)}.';
       _hasError = false;
     });
+    _addEvent(
+      HistoryEvent(
+        time: DateTime.now(),
+        title: 'Preset ${_presetLabel(preset)}',
+        detail: isOnline ? 'Applied' : 'Queued',
+        icon: Icons.auto_awesome_rounded,
+        category: HistoryCategory.commands,
+        ok: true,
+      ),
+    );
   }
 
   String _presetLabel(AquariumPreset preset) {
@@ -335,6 +481,16 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _status = 'Time synced.';
     });
+    _addEvent(
+      HistoryEvent(
+        time: DateTime.now(),
+        title: 'Sync time',
+        detail: 'Applied',
+        icon: Icons.schedule_rounded,
+        category: HistoryCategory.commands,
+        ok: true,
+      ),
+    );
   }
 
   void _emergencyOff({required bool isOnline}) {
@@ -344,6 +500,16 @@ class _HomeScreenState extends State<HomeScreen> {
       _lightingStatus = isOnline ? 'Sending...' : 'Queued.';
       _status = isOnline ? 'Emergency OFF sent.' : 'Emergency OFF queued.';
     });
+    _addEvent(
+      HistoryEvent(
+        time: DateTime.now(),
+        title: 'Emergency OFF',
+        detail: isOnline ? 'Sent' : 'Queued',
+        icon: Icons.power_settings_new_rounded,
+        category: HistoryCategory.commands,
+        ok: true,
+      ),
+    );
   }
 
   String _flowLabel(FlowDirection direction) {
@@ -364,6 +530,16 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _flowStatus = 'Applied.';
     });
+    _addEvent(
+      HistoryEvent(
+        time: DateTime.now(),
+        title: 'Flow ${_flowLabel(direction)}',
+        detail: 'Applied',
+        icon: Icons.swap_horiz_rounded,
+        category: HistoryCategory.commands,
+        ok: true,
+      ),
+    );
   }
 
   Widget _flowButton({
@@ -632,25 +808,119 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  String _filterLabel(HistoryFilter filter) {
+    return switch (filter) {
+      HistoryFilter.all => 'All',
+      HistoryFilter.commands => 'Commands',
+      HistoryFilter.alerts => 'Alerts',
+      HistoryFilter.readings => 'Readings',
+    };
+  }
+
+  List<HistoryEvent> _filteredEvents() {
+    return _events.where((event) {
+      return switch (_historyFilter) {
+        HistoryFilter.all => true,
+        HistoryFilter.commands => event.category == HistoryCategory.commands,
+        HistoryFilter.alerts => event.category == HistoryCategory.alerts,
+        HistoryFilter.readings => event.category == HistoryCategory.readings,
+      };
+    }).toList();
+  }
+
+  void _exportEvents({required bool asJson}) {
+    final items = _events
+        .map(
+          (e) => {
+            'time': e.time.toIso8601String(),
+            'title': e.title,
+            'detail': e.detail ?? '',
+            'category': e.category.name,
+            'result': e.ok ? 'OK' : 'Fail',
+          },
+        )
+        .toList();
+    final payload = asJson
+        ? jsonEncode(items)
+        : [
+            'time,title,detail,category,result',
+            ...items.map(
+              (e) =>
+                  '"${e['time']}","${e['title']}","${e['detail']}","${e['category']}","${e['result']}"',
+            ),
+          ].join('\n');
+    Clipboard.setData(ClipboardData(text: payload));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Exported ${asJson ? 'JSON' : 'CSV'} to clipboard.')),
+    );
+  }
+
+  void _showExportDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Export'),
+        content: const Text('Copy events to clipboard.'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _exportEvents(asJson: true);
+            },
+            child: const Text('JSON'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _exportEvents(asJson: false);
+            },
+            child: const Text('CSV'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _historyList() {
     final scheme = Theme.of(context).colorScheme;
-    if (_history.isEmpty) {
+    final items = _filteredEvents();
+    if (items.isEmpty) {
       return Text(
-        'No history yet. Refresh to collect readings.',
+        'No events yet. Try Refresh or apply a preset.',
         style: TextStyle(color: scheme.onSurfaceVariant),
       );
     }
     return Column(
-      children: _history
+      children: items
           .map(
-            (r) => ListTile(
+            (event) => ListTile(
               dense: true,
               contentPadding: const EdgeInsets.symmetric(horizontal: 0),
-              leading: Icon(Icons.timeline, color: scheme.primary),
-              title: Text('${r.temperature} C | ${r.humidity} %'),
+              leading: CircleAvatar(
+                radius: 16,
+                backgroundColor: (event.ok ? Colors.green : Colors.red).withOpacity(0.12),
+                child: Icon(
+                  event.icon,
+                  color: event.ok ? Colors.green : Colors.red,
+                  size: 18,
+                ),
+              ),
+              title: Text(event.title),
               subtitle: Text(
-                '${r.time.hour.toString().padLeft(2, '0')}:${r.time.minute.toString().padLeft(2, '0')}',
+                '${_formatEventTime(event.time)}${event.detail != null ? ' · ${event.detail}' : ''}',
                 style: TextStyle(color: scheme.onSurfaceVariant),
+              ),
+              trailing: Text(
+                event.ok ? 'OK' : 'Fail',
+                style: TextStyle(
+                  color: event.ok ? Colors.green : Colors.red,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
               ),
             ),
           )
@@ -1188,6 +1458,35 @@ class _HomeScreenState extends State<HomeScreen> {
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
                 ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: SegmentedButton<HistoryFilter>(
+                      segments: HistoryFilter.values
+                          .map(
+                            (filter) => ButtonSegment(
+                              value: filter,
+                              label: Text(_filterLabel(filter)),
+                            ),
+                          )
+                          .toList(),
+                      selected: {_historyFilter},
+                      onSelectionChanged: (selection) {
+                        setState(() {
+                          _historyFilter = selection.first;
+                        });
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  OutlinedButton.icon(
+                    onPressed: _showExportDialog,
+                    icon: const Icon(Icons.download_rounded),
+                    label: const Text('Export'),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
               _historyList(),
