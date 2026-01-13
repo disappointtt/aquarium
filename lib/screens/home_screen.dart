@@ -18,6 +18,8 @@ class Reading {
 
 enum AquariumPreset { day, night, feeding }
 
+enum FlowDirection { left, stop, right }
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -36,6 +38,8 @@ class _HomeScreenState extends State<HomeScreen> {
   DateTime? _lastOnlineAt;
   DateTime? _lastUpdatedAt;
   AquariumPreset _preset = AquariumPreset.day;
+  FlowDirection _flowDirection = FlowDirection.stop;
+  String _flowStatus = 'Ready.';
   final List<Reading> _history = [];
 
   void _pushHistory(String temp, String hum) {
@@ -264,6 +268,71 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  String _flowLabel(FlowDirection direction) {
+    return switch (direction) {
+      FlowDirection.left => 'Left',
+      FlowDirection.stop => 'Stop',
+      FlowDirection.right => 'Right',
+    };
+  }
+
+  Future<void> _setFlowDirection(FlowDirection direction) async {
+    setState(() {
+      _flowDirection = direction;
+      _flowStatus = 'Sending...';
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    if (!mounted) return;
+    setState(() {
+      _flowStatus = 'Applied.';
+    });
+  }
+
+  Widget _flowButton({
+    required FlowDirection direction,
+    required IconData icon,
+    required bool isEnabled,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final isActive = _flowDirection == direction;
+    final activeColor = scheme.primary;
+    final baseColor = scheme.onSurfaceVariant;
+    final content = InkWell(
+      onTap: isEnabled ? () => _setFlowDirection(direction) : null,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: isActive ? activeColor.withOpacity(0.12) : scheme.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isActive ? activeColor : scheme.outlineVariant,
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(
+              icon,
+              color: isActive ? activeColor : baseColor,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _flowLabel(direction),
+              style: TextStyle(
+                color: isActive ? activeColor : baseColor,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    return Expanded(
+      child: isEnabled ? content : Tooltip(message: 'Нет соединения', child: content),
+    );
+  }
+
   Widget _buildInfoBanner({required IconData icon, required String text, required Color color}) {
     return Container(
       width: double.infinity,
@@ -455,6 +524,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final isOnline = !_hasError && _temperature != '---';
     final espIp = appState.espIp;
     final ledOn = _ledState.toLowerCase() == 'on';
+    final isFlowEnabled = isOnline && !_isLoading;
     final tempTrend = _trendText(currentValue: _temperature, isTemperature: true);
     final humTrend = _trendText(currentValue: _humidity, isTemperature: false);
     final humidityValue = double.tryParse(_humidity);
@@ -719,16 +789,45 @@ class _HomeScreenState extends State<HomeScreen> {
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
+                                const Spacer(),
+                                Text(
+                                  _flowLabel(_flowDirection),
+                                  style: TextStyle(
+                                    color: scheme.onSurface,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                               ],
                             ),
                             const SizedBox(height: 12),
                             Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: const [
-                                Icon(Icons.arrow_left_rounded),
-                                Icon(Icons.compress_rounded),
-                                Icon(Icons.arrow_right_rounded),
+                              children: [
+                                _flowButton(
+                                  direction: FlowDirection.left,
+                                  icon: Icons.arrow_left_rounded,
+                                  isEnabled: isFlowEnabled,
+                                ),
+                                const SizedBox(width: 8),
+                                _flowButton(
+                                  direction: FlowDirection.stop,
+                                  icon: Icons.stop_circle_outlined,
+                                  isEnabled: isFlowEnabled,
+                                ),
+                                const SizedBox(width: 8),
+                                _flowButton(
+                                  direction: FlowDirection.right,
+                                  icon: Icons.arrow_right_rounded,
+                                  isEnabled: isFlowEnabled,
+                                ),
                               ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _flowStatus,
+                              style: TextStyle(
+                                color: scheme.onSurfaceVariant,
+                                fontSize: 12,
+                              ),
                             ),
                           ],
                         ),
