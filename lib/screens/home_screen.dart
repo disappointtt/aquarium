@@ -42,12 +42,12 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _dangerTemp = false;
   bool _isLoading = false;
   bool _isLightingAuto = false;
-  String _lightingStatus = 'Ready.';
+  String _lightingStatus = 'Idle';
   DateTime? _lastOnlineAt;
   DateTime? _lastUpdatedAt;
   AquariumPreset _preset = AquariumPreset.day;
   FlowDirection _flowDirection = FlowDirection.stop;
-  String _flowStatus = 'Ready.';
+  String _flowStatus = 'Idle';
   final List<Reading> _history = [];
   final HistoryStore _historyStore = HistoryStore.instance;
   bool _wasOnline = false;
@@ -129,7 +129,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final nextState = _ledState.toLowerCase() == 'on' ? 'off' : 'on';
     setState(() {
       _requestedLedState = nextState;
-      _lightingStatus = 'Sending...';
+      _lightingStatus = 'Sending';
     });
     if (appState.isDemo) {
       setState(() {
@@ -137,7 +137,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _status = 'Light toggled (demo mode).';
         _hasError = false;
         _requestedLedState = null;
-        _lightingStatus = 'Applied.';
+        _lightingStatus = 'Done';
       });
       _addEvent(
         HistoryEvent(
@@ -164,7 +164,7 @@ class _HomeScreenState extends State<HomeScreen> {
         if (mounted) {
           setState(() {
             _requestedLedState = null;
-            _lightingStatus = 'Applied.';
+            _lightingStatus = 'Done';
           });
         }
         _addEvent(
@@ -182,7 +182,7 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _status = 'HTTP error: ${response.statusCode}';
           _hasError = true;
-          _lightingStatus = 'Failed to apply.';
+          _lightingStatus = 'Failed';
         });
         _addEvent(
           HistoryEvent(
@@ -201,7 +201,7 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _status = 'Request error: ${e.toString()}';
         _hasError = true;
-        _lightingStatus = 'Failed to apply.';
+        _lightingStatus = 'Failed';
       });
       _addEvent(
         HistoryEvent(
@@ -495,6 +495,60 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _kvSplitRow({required String label, required String value, TextStyle? style}) {
+    final textStyle = style ?? Theme.of(context).textTheme.bodySmall;
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            '$label:',
+            style: textStyle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          value,
+          style: textStyle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+    );
+  }
+
+  Widget _statusRow(String status) {
+    final scheme = Theme.of(context).colorScheme;
+    final normalized = status.toLowerCase();
+    var icon = Icons.circle_outlined;
+    var color = scheme.onSurfaceVariant;
+    if (normalized.contains('fail')) {
+      icon = Icons.error_rounded;
+      color = Colors.red;
+    } else if (normalized.contains('send') || normalized.contains('queue')) {
+      icon = Icons.schedule_rounded;
+      color = Colors.orange;
+    } else if (normalized.contains('done') || normalized.contains('applied')) {
+      icon = Icons.check_circle_rounded;
+      color = Colors.green;
+    }
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            status,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
   void _copyIp(String ip) {
     Clipboard.setData(ClipboardData(text: ip));
     ScaffoldMessenger.of(context).showSnackBar(
@@ -585,7 +639,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _flowDirection = FlowDirection.stop;
       _requestedLedState = 'off';
-      _lightingStatus = isOnline ? 'Sending...' : 'Queued.';
+      _lightingStatus = isOnline ? 'Sending' : 'Queued';
       _status = isOnline ? 'Emergency OFF sent.' : 'Emergency OFF queued.';
     });
     _addEvent(
@@ -612,12 +666,12 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _setFlowDirection(FlowDirection direction) async {
     setState(() {
       _flowDirection = direction;
-      _flowStatus = 'Sending...';
+      _flowStatus = 'Sending';
     });
     await Future<void>.delayed(const Duration(milliseconds: 600));
     if (!mounted) return;
     setState(() {
-      _flowStatus = 'Applied.';
+      _flowStatus = 'Done';
     });
     _addEvent(
       HistoryEvent(
@@ -1238,159 +1292,189 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Expanded(
-                    child: _surfaceCard(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(Icons.swap_horiz_rounded, color: scheme.primary),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    'Flow direction',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyMedium
-                                        ?.copyWith(color: scheme.onSurfaceVariant),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                    Expanded(
+                      child: _surfaceCard(
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.swap_horiz_rounded, color: scheme.primary),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Flow direction',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.copyWith(color: scheme.onSurfaceVariant),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.clip,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: Text(
                                   _flowLabel(_flowDirection),
                                   style: Theme.of(context).textTheme.bodyMedium,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                _flowButton(
-                                  direction: FlowDirection.left,
-                                  icon: Icons.arrow_left_rounded,
-                                  isEnabled: isFlowEnabled,
-                                ),
-                                const SizedBox(width: 8),
-                                _flowButton(
-                                  direction: FlowDirection.stop,
-                                  icon: Icons.stop_circle_outlined,
-                                  isEnabled: isFlowEnabled,
-                                ),
-                                const SizedBox(width: 8),
-                                _flowButton(
-                                  direction: FlowDirection.right,
-                                  icon: Icons.arrow_right_rounded,
-                                  isEnabled: isFlowEnabled,
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              _flowStatus,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(color: scheme.onSurfaceVariant),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  _flowButton(
+                                    direction: FlowDirection.left,
+                                    icon: Icons.arrow_left_rounded,
+                                    isEnabled: isFlowEnabled,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _flowButton(
+                                    direction: FlowDirection.stop,
+                                    icon: Icons.stop_circle_outlined,
+                                    isEnabled: isFlowEnabled,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _flowButton(
+                                    direction: FlowDirection.right,
+                                    icon: Icons.arrow_right_rounded,
+                                    isEnabled: isFlowEnabled,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              _statusRow(_flowStatus),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: InfoCard(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.lightbulb_rounded, color: Colors.amber),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Lighting',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodyMedium
-                                      ?.copyWith(color: scheme.onSurfaceVariant),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              SizedBox(
-                                width: 120,
-                                child: ToggleButtons(
-                                  textStyle: Theme.of(context).textTheme.labelMedium,
-                                  isSelected: [_isLightingAuto == false, _isLightingAuto == true],
-                                  onPressed: (index) {
-                                    setState(() {
-                                      _isLightingAuto = index == 1;
-                                    });
-                                  },
-                                  constraints: const BoxConstraints(minHeight: 32, minWidth: 52),
-                                  children: const [
-                                    Text('Man', maxLines: 1, overflow: TextOverflow.ellipsis),
-                                    Text('Auto', maxLines: 1, overflow: TextOverflow.ellipsis),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _surfaceCard(
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    _kvRow(
-                                      label: 'Requested',
-                                      value: requestedLedOn,
-                                      style: Theme.of(context).textTheme.bodySmall,
+                              LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final isTight = constraints.maxWidth < 210;
+                                  final headerLeft = Row(
+                                    children: [
+                                      const Icon(Icons.lightbulb_rounded, color: Colors.amber),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          'Lighting',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodyMedium
+                                              ?.copyWith(color: scheme.onSurfaceVariant),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.clip,
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                  final modeToggle = SegmentedButton<bool>(
+                                    showSelectedIcon: false,
+                                    style: ButtonStyle(
+                                      fixedSize: const MaterialStatePropertyAll(Size(56, 32)),
+                                      padding: const MaterialStatePropertyAll(EdgeInsets.zero),
+                                      textStyle: MaterialStatePropertyAll(
+                                        Theme.of(context).textTheme.labelMedium ??
+                                            const TextStyle(),
+                                      ),
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                      visualDensity: VisualDensity.compact,
+                                      shape: MaterialStatePropertyAll(
+                                        RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                      ),
                                     ),
-                                    const SizedBox(height: 4),
-                                    _kvRow(
-                                      label: 'Actual',
-                                      value: ledOn ? 'On' : 'Off',
-                                      style: Theme.of(context).textTheme.bodySmall,
+                                    segments: const [
+                                      ButtonSegment(
+                                        value: false,
+                                        label: Text('Man', maxLines: 1, overflow: TextOverflow.ellipsis),
+                                      ),
+                                      ButtonSegment(
+                                        value: true,
+                                        label: Text('Auto', maxLines: 1, overflow: TextOverflow.ellipsis),
+                                      ),
+                                    ],
+                                    selected: {_isLightingAuto},
+                                    onSelectionChanged: (selection) {
+                                      setState(() {
+                                        _isLightingAuto = selection.first;
+                                      });
+                                    },
+                                  );
+                                  if (isTight) {
+                                    return Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        headerLeft,
+                                        const SizedBox(height: 8),
+                                        Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: modeToggle,
+                                        ),
+                                      ],
+                                    );
+                                  }
+                                  return Row(
+                                    children: [
+                                      Expanded(child: headerLeft),
+                                      const SizedBox(width: 8),
+                                      modeToggle,
+                                    ],
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        _kvSplitRow(
+                                          label: 'Requested',
+                                          value: requestedLedOn,
+                                          style: Theme.of(context).textTheme.bodySmall,
+                                        ),
+                                        const SizedBox(height: 4),
+                                        _kvSplitRow(
+                                          label: 'Actual',
+                                          value: ledOn ? 'On' : 'Off',
+                                          style: Theme.of(context).textTheme.bodySmall,
+                                        ),
+                                      ],
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Switch(
+                                    value: ledOn,
+                                    onChanged: _isLightingAuto ? null : (_) => _toggleLight(),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 8),
-                              Switch(
-                                value: ledOn,
-                                onChanged: (_) => _toggleLight(),
-                              ),
+                              const SizedBox(height: 8),
+                              _statusRow(_lightingStatus),
                             ],
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _lightingStatus,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(color: scheme.onSurfaceVariant),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -1413,28 +1497,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   Row(
                     children: [
                       Expanded(
-                        child: Column(
-                          children: [
-                            FilledButton.icon(
-                              onPressed: _getState,
-                              icon: _isLoading
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    )
-                                  : const Icon(Icons.sync_rounded),
-                              label: const Text('Refresh data'),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              _formatUpdatedTime(),
-                              style: TextStyle(
-                                color: scheme.onSurfaceVariant,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
+                        child: OutlinedButton.icon(
+                          onPressed: _getState,
+                          icon: _isLoading
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.sync_rounded),
+                          label: const Text('Refresh data'),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(44),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -1443,9 +1518,25 @@ class _HomeScreenState extends State<HomeScreen> {
                           onPressed: _getState,
                           icon: const Icon(Icons.wifi_tethering_rounded),
                           label: const Text('Reconnect'),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(44),
+                          ),
                         ),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      _formatUpdatedTime(),
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 11,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Row(
@@ -1455,6 +1546,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           onPressed: () => _applyPreset(_preset, isOnline: isOnline),
                           icon: const Icon(Icons.auto_awesome_rounded),
                           label: Text('Apply $presetLabel'),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(44),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -1463,6 +1557,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           onPressed: _syncTime,
                           icon: const Icon(Icons.schedule_rounded),
                           label: const Text('Sync time'),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(44),
+                          ),
                         ),
                       ),
                     ],
@@ -1477,6 +1574,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       style: FilledButton.styleFrom(
                         backgroundColor: Colors.red,
                         foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(44),
                       ),
                     ),
                   ),
