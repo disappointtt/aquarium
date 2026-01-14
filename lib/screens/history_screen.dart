@@ -207,6 +207,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: SegmentedButton<HistoryFilter>(
+                        showSelectedIcon: false,
                         segments: HistoryFilter.values
                             .map(
                               (filter) => ButtonSegment(
@@ -241,6 +242,20 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         ),
                         const SizedBox(width: 12),
                         SegmentedButton<HistorySort>(
+                          style: ButtonStyle(
+                            fixedSize:
+                                const MaterialStatePropertyAll(Size(72, 32)),
+                            padding: const MaterialStatePropertyAll(
+                              EdgeInsets.symmetric(horizontal: 0),
+                            ),
+                            textStyle: MaterialStatePropertyAll(
+                              Theme.of(context).textTheme.labelMedium ??
+                                  const TextStyle(),
+                            ),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          showSelectedIcon: false,
                           segments: const [
                             ButtonSegment(
                               value: HistorySort.desc,
