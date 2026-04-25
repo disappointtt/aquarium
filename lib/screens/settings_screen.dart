@@ -34,9 +34,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final value = _ipController.text.trim();
     await appState.setEspIp(value);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('IP saved.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('IP saved.')));
     if (Navigator.canPop(context)) {
       Navigator.pop(context);
     }
@@ -54,7 +54,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _isTesting = true);
     try {
       final resp = await http
-          .get(Uri.parse('http://${_ipController.text.trim()}/getState'))
+          .get(Uri.parse('http://${_ipController.text.trim()}/status'))
           .timeout(const Duration(seconds: 6));
       if (resp.statusCode == 200) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -66,9 +66,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Request error: ${e.toString()}')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Request error: ${e.toString()}')));
     } finally {
       if (mounted) setState(() => _isTesting = false);
     }
@@ -166,7 +166,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 ? const SizedBox(
                                     width: 16,
                                     height: 16,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
                                   )
                                 : const Icon(Icons.wifi_tethering_rounded),
                             label: const Text('Test'),
@@ -222,7 +224,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Demo mode'),
-                      subtitle: const Text('Use simulated readings without ESP.'),
+                      subtitle: const Text(
+                        'Use simulated readings without ESP.',
+                      ),
                       value: appState.isDemo,
                       onChanged: _changeDemo,
                     ),
