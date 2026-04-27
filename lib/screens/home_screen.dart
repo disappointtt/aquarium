@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -27,6 +28,20 @@ enum AquariumPreset { day, night, feeding }
 
 enum FlowDirection { left, stop, right }
 
+class AquariumAlert {
+  final String key;
+  final String title;
+  final String message;
+  final IconData icon;
+
+  const AquariumAlert({
+    required this.key,
+    required this.title,
+    required this.message,
+    required this.icon,
+  });
+}
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, this.onOpenHistory});
 
@@ -43,7 +58,6 @@ class _HomeScreenState extends State<HomeScreen> {
   String _humidity = '---';
   String _status = 'Waiting for data. Pull to refresh.';
   bool _hasError = false;
-  bool _dangerTemp = false;
   bool _isLoading = false;
   bool _isLightingAuto = false;
   String _lightingStatus = 'Idle';
@@ -67,6 +81,13 @@ class _HomeScreenState extends State<HomeScreen> {
   final List<Reading> _history = [];
   final HistoryStore _historyStore = HistoryStore.instance;
   bool _wasOnline = false;
+  Timer? _alertRepeatTimer;
+  DateTime? _lightOffSince;
+  final Map<String, DateTime> _lastAlertTimes = {};
+  final Map<String, AquariumAlert> _activeAlerts = {};
+
+  static const Duration _alertRepeatInterval = Duration(minutes: 2);
+  static const Duration _lightOffAlertDelay = Duration(minutes: 3);
 
   String _apiBase(String ip) => 'http://$ip';
 
@@ -278,13 +299,13 @@ class _HomeScreenState extends State<HomeScreen> {
       _humidity = hum;
       _status = isDemo ? 'Demo readings updated.' : 'Readings updated.';
       _hasError = false;
-      _dangerTemp = _isDangerTemp(temp);
       _pushHistory(temp, hum);
       _lastOnlineAt = DateTime.now();
       _lastUpdatedAt = DateTime.now();
       _isLoading = false;
     });
     _markConnection(true);
+    _evaluateAlerts();
   }
 
   void _updateSystemStatus(Map<String, dynamic> data) {
@@ -329,10 +350,118 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  bool _isDangerTemp(String temp) {
-    final value = double.tryParse(temp);
-    if (value == null) return false;
-    return value < 20 || value > 30;
+  void _evaluateAlerts() {
+    if (!mounted || _hasError) return;
+    final now = DateTime.now();
+    final tempValue = double.tryParse(_temperature);
+    final levelValue = double.tryParse(_humidity);
+    final waterLevelPercent = levelValue == null
+        ? null
+        : (levelValue <= 1 ? levelValue * 100 : levelValue);
+    final ledOff = _ledState.toLowerCase() == 'off';
+
+    if (ledOff) {
+      _lightOffSince ??= now;
+    } else {
+      _lightOffSince = null;
+    }
+
+    final alerts = <AquariumAlert>[];
+    if (waterLevelPercent != null && waterLevelPercent < 80) {
+      alerts.add(
+        AquariumAlert(
+          key: 'water-low',
+          title: 'Низкий уровень воды',
+          message:
+              'Уровень воды ниже 80%: ${waterLevelPercent.toStringAsFixed(0)}%',
+          icon: Icons.water_drop_outlined,
+        ),
+      );
+    }
+    if (waterLevelPercent != null && waterLevelPercent > 95) {
+      alerts.add(
+        AquariumAlert(
+          key: 'water-high',
+          title: 'Высокий уровень воды',
+          message:
+              'Уровень воды выше 95%: ${waterLevelPercent.toStringAsFixed(0)}%',
+          icon: Icons.water_rounded,
+        ),
+      );
+    }
+    if (tempValue != null && tempValue < 15) {
+      alerts.add(
+        AquariumAlert(
+          key: 'temp-low',
+          title: 'Вода слишком холодная',
+          message: 'Температура ниже 15 C: ${tempValue.toStringAsFixed(1)} C',
+          icon: Icons.ac_unit_rounded,
+        ),
+      );
+    }
+    if (tempValue != null && tempValue > 20) {
+      alerts.add(
+        AquariumAlert(
+          key: 'temp-high',
+          title: 'Вода слишком горячая',
+          message: 'Температура выше 20 C: ${tempValue.toStringAsFixed(1)} C',
+          icon: Icons.local_fire_department_rounded,
+        ),
+      );
+    }
+    final lightOffSince = _lightOffSince;
+    if (ledOff &&
+        lightOffSince != null &&
+        now.difference(lightOffSince) >= _lightOffAlertDelay) {
+      alerts.add(
+        AquariumAlert(
+          key: 'light-off-long',
+          title: 'Свет долго выключен',
+          message: 'Свет выключен дольше 3 минут',
+          icon: Icons.lightbulb_outline_rounded,
+        ),
+      );
+    }
+
+    final activeKeys = alerts.map((alert) => alert.key).toSet();
+    _lastAlertTimes.removeWhere((key, _) => !activeKeys.contains(key));
+
+    setState(() {
+      _activeAlerts
+        ..clear()
+        ..addEntries(alerts.map((alert) => MapEntry(alert.key, alert)));
+    });
+
+    for (final alert in alerts) {
+      _sendAlertIfDue(alert, now: now);
+    }
+  }
+
+  void _sendAlertIfDue(AquariumAlert alert, {required DateTime now}) {
+    final lastSentAt = _lastAlertTimes[alert.key];
+    if (lastSentAt != null &&
+        now.difference(lastSentAt) < _alertRepeatInterval) {
+      return;
+    }
+    _lastAlertTimes[alert.key] = now;
+    _addEvent(
+      HistoryEvent(
+        id: _newEventId(time: now, tag: alert.key),
+        time: now,
+        title: alert.title,
+        message: alert.message,
+        icon: alert.icon,
+        category: HistoryCategory.alerts,
+        ok: false,
+        snapshot: _buildSnapshot(ok: true),
+      ),
+    );
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(alert.message),
+        duration: const Duration(seconds: 4),
+      ),
+    );
   }
 
   String _offlineReason(String status) {
@@ -1240,6 +1369,20 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _alertRepeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _evaluateAlerts();
+    });
+  }
+
+  @override
+  void dispose() {
+    _alertRepeatTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final appState = AppScope.of(context);
@@ -1266,6 +1409,9 @@ class _HomeScreenState extends State<HomeScreen> {
               : '· ${(humidityValue * 100).toStringAsFixed(0)}%')
         : null;
     final presetLabel = _presetLabel(_preset);
+    final activeAlert = _activeAlerts.isEmpty
+        ? null
+        : _activeAlerts.values.first;
 
     return Scaffold(
       body: SafeArea(
@@ -1435,10 +1581,10 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 12),
               if (_hasError)
                 _buildErrorBanner(_status)
-              else if (_dangerTemp)
+              else if (activeAlert != null)
                 _buildInfoBanner(
-                  icon: Icons.thermostat,
-                  text: 'Temperature alert: $_temperature C',
+                  icon: activeAlert.icon,
+                  text: activeAlert.message,
                   color: Colors.red,
                 )
               else
