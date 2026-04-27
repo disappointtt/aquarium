@@ -15,7 +15,7 @@ void main() {
 
     expect(find.text('Tropical Tank'), findsOneWidget);
     expect(find.text('Home'), findsOneWidget);
-    expect(find.text('Temperature'), findsOneWidget);
-    expect(find.text('Water level'), findsOneWidget);
+    expect(find.text('Температура'), findsOneWidget);
+    expect(find.text('Уровень воды'), findsOneWidget);
   });
 }

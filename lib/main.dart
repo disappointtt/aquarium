@@ -44,11 +44,8 @@ class AppState extends ChangeNotifier {
 
 /// Inherited-обёртка для доступа к AppState из любого экрана.
 class AppScope extends InheritedNotifier<AppState> {
-  const AppScope({
-    super.key,
-    required AppState notifier,
-    required Widget child,
-  }) : super(notifier: notifier, child: child);
+  const AppScope({super.key, required AppState notifier, required Widget child})
+    : super(notifier: notifier, child: child);
 
   static AppState of(BuildContext context) {
     final scope = context.dependOnInheritedWidgetOfExactType<AppScope>();
@@ -74,16 +71,9 @@ Future<void> main() async {
     _ => ThemeMode.system,
   };
 
-  final appState = AppState(
-    themeMode: themeMode,
-    isDemo: demo,
-    espIp: espIp,
-  );
+  final appState = AppState(themeMode: themeMode, isDemo: demo, espIp: espIp);
 
-  runApp(AppScope(
-    notifier: appState,
-    child: const MyApp(),
-  ));
+  runApp(AppScope(notifier: appState, child: const MyApp()));
 }
 
 class MyApp extends StatelessWidget {
@@ -91,16 +81,16 @@ class MyApp extends StatelessWidget {
 
   ColorScheme _colorScheme(Brightness brightness) {
     // Спокойный «водный» синий как базовый акцент.
-    final seed = const Color(0xFF2E6BD6);
+    final seed = const Color(0xFF0E7C7B);
     return ColorScheme.fromSeed(
       seedColor: seed,
       brightness: brightness,
       primaryContainer: brightness == Brightness.light
-          ? const Color(0xFFE6F0FF)
-          : const Color(0xFF0D1B2A),
+          ? const Color(0xFFE5F7F5)
+          : const Color(0xFF12343B),
       surface: brightness == Brightness.light
-          ? const Color(0xFFF3F6FB)
-          : const Color(0xFF0B1320),
+          ? const Color(0xFFFFFFFF)
+          : const Color(0xFF0F1F24),
     );
   }
 
@@ -110,13 +100,35 @@ class MyApp extends StatelessWidget {
       useMaterial3: true,
       colorScheme: scheme,
       textTheme: const TextTheme(
-        titleMedium: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, height: 1.2),
-        titleSmall: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, height: 1.2),
-        bodyMedium: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3),
-        bodySmall: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, height: 1.3),
-        labelMedium: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, height: 1.1),
+        titleMedium: TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
+          height: 1.2,
+        ),
+        titleSmall: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
+          height: 1.2,
+        ),
+        bodyMedium: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          height: 1.3,
+        ),
+        bodySmall: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+          height: 1.3,
+        ),
+        labelMedium: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          height: 1.1,
+        ),
       ),
-      scaffoldBackgroundColor: scheme.surface,
+      scaffoldBackgroundColor: brightness == Brightness.light
+          ? const Color(0xFFF5FAFA)
+          : const Color(0xFF081316),
       cardColor: scheme.surface,
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
@@ -125,11 +137,11 @@ class MyApp extends StatelessWidget {
       ),
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide(color: scheme.outlineVariant),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide(color: scheme.primary, width: 1.6),
         ),
         fillColor: scheme.primaryContainer.withOpacity(0.35),
@@ -139,7 +151,7 @@ class MyApp extends StatelessWidget {
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           minimumSize: const Size.fromHeight(52),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           elevation: 0,
           backgroundColor: scheme.primary,
           foregroundColor: scheme.onPrimary,
@@ -147,7 +159,7 @@ class MyApp extends StatelessWidget {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           elevation: 0,
         ),
       ),
@@ -155,7 +167,7 @@ class MyApp extends StatelessWidget {
         elevation: 0,
         color: scheme.surface,
         shadowColor: Colors.black.withOpacity(0.12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
       appBarTheme: AppBarTheme(
         elevation: 0,
@@ -171,7 +183,9 @@ class MyApp extends StatelessWidget {
       navigationBarTheme: NavigationBarThemeData(
         labelTextStyle: MaterialStateProperty.resolveWith(
           (states) => TextStyle(
-            fontWeight: states.contains(MaterialState.selected) ? FontWeight.w700 : FontWeight.w600,
+            fontWeight: states.contains(MaterialState.selected)
+                ? FontWeight.w700
+                : FontWeight.w600,
           ),
         ),
       ),

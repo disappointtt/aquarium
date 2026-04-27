@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use, unused_element, unused_field, prefer_final_fields
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
@@ -1368,6 +1370,600 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _appHeader({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    Widget? trailing,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: scheme.primary,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, color: scheme.onPrimary, size: 22),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 3),
+              Text(
+                subtitle,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+        if (trailing != null) ...[const SizedBox(width: 8), trailing],
+      ],
+    );
+  }
+
+  Widget _statusChip({
+    required IconData icon,
+    required String label,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: color),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w800,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _compactMetric({
+    required String title,
+    required String value,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return InfoCard(
+      padding: const EdgeInsets.all(12),
+      child: SizedBox(
+        height: 94,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, size: 18, color: color),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const Spacer(),
+            Text(
+              value,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontSize: 25,
+                fontWeight: FontWeight.w900,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _miniStat(String label, String value, IconData icon) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: scheme.primaryContainer.withOpacity(0.36),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: scheme.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: Theme.of(context).textTheme.labelMedium,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _primaryActionButton({
+    required String label,
+    required IconData icon,
+    required VoidCallback? onPressed,
+    bool danger = false,
+  }) {
+    return SizedBox(
+      height: 42,
+      child: danger
+          ? FilledButton.icon(
+              onPressed: onPressed,
+              icon: Icon(icon, size: 18),
+              label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+            )
+          : OutlinedButton.icon(
+              onPressed: onPressed,
+              icon: Icon(icon, size: 18),
+              label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+    );
+  }
+
+  Widget _compactPresetButton(
+    AquariumPreset preset,
+    String label,
+    IconData icon,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    final isActive = preset == _preset;
+    final isOnline = !_hasError && _temperature != '---';
+    return Expanded(
+      child: InkWell(
+        onTap: () => _applyPreset(preset, isOnline: isOnline),
+        onLongPress: () => _editPreset(preset),
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          height: 78,
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: isActive ? scheme.primary.withOpacity(0.12) : scheme.surface,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isActive ? scheme.primary : scheme.outlineVariant,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: isActive ? scheme.primary : scheme.onSurfaceVariant,
+              ),
+              const Spacer(),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: isActive ? scheme.primary : scheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w800,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (!isOnline) ...[
+                const SizedBox(height: 2),
+                Text(
+                  'queued',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _homeRedesign({
+    required bool isOnline,
+    required String espIp,
+    required bool ledOn,
+    required String requestedLedOn,
+    required bool isFlowEnabled,
+    required String waterLevelLabel,
+    required String presetLabel,
+    required AquariumAlert? activeAlert,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final appState = AppScope.of(context);
+    final connectionColor = isOnline ? Colors.green : Colors.orange;
+    final alertColor = activeAlert == null ? scheme.primary : Colors.red;
+    final alertIcon = activeAlert?.icon ?? Icons.info_outline_rounded;
+    final alertText = _hasError
+        ? _offlineReason(_status)
+        : (activeAlert?.message ?? _status);
+
+    return Scaffold(
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: _getState,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            children: [
+              _appHeader(
+                title: 'Аквариум',
+                subtitle:
+                    '${isOnline ? "Online" : "Offline"} · ${_formatUpdatedTime()}',
+                icon: Icons.water_drop_rounded,
+                trailing: appState.isDemo
+                    ? _statusChip(
+                        icon: Icons.science_rounded,
+                        label: 'Demo',
+                        color: scheme.primary,
+                      )
+                    : null,
+              ),
+              const SizedBox(height: 16),
+              InfoCard(
+                padding: EdgeInsets.zero,
+                child: Container(
+                  height: 132,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF12343B),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Stack(
+                    children: [
+                      Align(
+                        alignment: Alignment.bottomCenter,
+                        child: Container(
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2EC4B6).withOpacity(0.78),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Tropical Tank',
+                                  style: Theme.of(context).textTheme.titleMedium
+                                      ?.copyWith(
+                                        color: Colors.white,
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              _statusChip(
+                                icon: isOnline
+                                    ? Icons.wifi_rounded
+                                    : Icons.wifi_off_rounded,
+                                label: isOnline ? 'Online' : 'Offline',
+                                color: connectionColor,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '${ledOn ? "Свет включен" : "Свет выключен"} · поток ${_flowLabel(_flowDirection).toLowerCase()} · $presetLabel',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: const Color(0xFFBFE7E2)),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const Spacer(),
+                          Text(
+                            waterLevelLabel,
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
+                                  color: Colors.white,
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              _buildInfoBanner(
+                icon: alertIcon,
+                text: alertText,
+                color: alertColor,
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _compactMetric(
+                      title: 'Температура',
+                      value: _temperature == '---' ? '---' : '$_temperature C',
+                      subtitle: _tempSlope == '--'
+                          ? 'нет тренда'
+                          : '$_tempSlope C/ч',
+                      icon: Icons.thermostat_rounded,
+                      color: Colors.deepOrange,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _compactMetric(
+                      title: 'Уровень воды',
+                      value: waterLevelLabel,
+                      subtitle: _levelSlope == '--'
+                          ? 'нет тренда'
+                          : '$_levelSlope %/ч',
+                      icon: Icons.water_rounded,
+                      color: Colors.blue,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const SectionHeader(title: 'Статус системы'),
+              const SizedBox(height: 8),
+              InfoCard(
+                padding: const EdgeInsets.all(12),
+                child: GridView.count(
+                  crossAxisCount: 2,
+                  childAspectRatio: 3.1,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  children: [
+                    _miniStat('Режим', _systemMode, Icons.tune_rounded),
+                    _miniStat('Помпа', _pumpState, Icons.waterfall_chart),
+                    _miniStat(
+                      'Компрессор',
+                      _compressorState == 'on' ? 'ON' : 'OFF',
+                      Icons.air_rounded,
+                    ),
+                    _miniStat('ESP', _espTime, Icons.schedule_rounded),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              const SectionHeader(title: 'Управление'),
+              const SizedBox(height: 8),
+              InfoCard(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _miniStat(
+                            'Свет',
+                            '${ledOn ? "ON" : "OFF"} · $requestedLedOn',
+                            Icons.lightbulb_rounded,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Switch(
+                          value: ledOn,
+                          onChanged: _isLightingAuto
+                              ? null
+                              : (_) => _toggleLight(),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        _flowButton(
+                          direction: FlowDirection.left,
+                          icon: Icons.arrow_left_rounded,
+                          isEnabled: isFlowEnabled,
+                        ),
+                        const SizedBox(width: 8),
+                        _flowButton(
+                          direction: FlowDirection.stop,
+                          icon: Icons.stop_circle_outlined,
+                          isEnabled: isFlowEnabled,
+                        ),
+                        const SizedBox(width: 8),
+                        _flowButton(
+                          direction: FlowDirection.right,
+                          icon: Icons.arrow_right_rounded,
+                          isEnabled: isFlowEnabled,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _primaryActionButton(
+                            label: 'Компрессор ON',
+                            icon: Icons.play_arrow_rounded,
+                            onPressed: isOnline && !_isLoading
+                                ? () => _setCompressor(true)
+                                : null,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _primaryActionButton(
+                            label: 'OFF',
+                            icon: Icons.stop_rounded,
+                            onPressed: isOnline && !_isLoading
+                                ? () => _setCompressor(false)
+                                : null,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              const SectionHeader(title: 'Пресеты'),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  _compactPresetButton(
+                    AquariumPreset.day,
+                    'Day',
+                    Icons.wb_sunny_rounded,
+                  ),
+                  const SizedBox(width: 8),
+                  _compactPresetButton(
+                    AquariumPreset.night,
+                    'Night',
+                    Icons.nights_stay_rounded,
+                  ),
+                  const SizedBox(width: 8),
+                  _compactPresetButton(
+                    AquariumPreset.feeding,
+                    'Feed',
+                    Icons.restaurant_rounded,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const SectionHeader(title: 'Быстрые команды'),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: _primaryActionButton(
+                      label: 'Refresh',
+                      icon: Icons.sync_rounded,
+                      onPressed: _getState,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _primaryActionButton(
+                      label: 'Sync time',
+                      icon: Icons.schedule_rounded,
+                      onPressed: _syncTime,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _primaryActionButton(
+                label: 'Emergency OFF',
+                icon: Icons.power_settings_new_rounded,
+                onPressed: () => _emergencyOff(isOnline: isOnline),
+                danger: true,
+              ),
+              const SizedBox(height: 16),
+              SectionHeader(
+                title: 'История',
+                trailing: TextButton(
+                  onPressed: widget.onOpenHistory,
+                  child: const Text('Открыть'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              _historyList(),
+              const SizedBox(height: 4),
+              Text(
+                'IP: $espIp',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1384,7 +1980,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final appState = AppScope.of(context);
     final isOnline = !_hasError && _temperature != '---';
     final espIp = appState.espIp;
@@ -1393,727 +1988,25 @@ class _HomeScreenState extends State<HomeScreen> {
         ? (ledOn ? 'On' : 'Off')
         : (_requestedLedState == 'on' ? 'On' : 'Off');
     final isFlowEnabled = isOnline && !_isLoading;
-    final tempTrend = _trendText(
-      currentValue: _temperature,
-      isTemperature: true,
-    );
-    final humTrend = _trendText(currentValue: _humidity, isTemperature: false);
     final humidityValue = double.tryParse(_humidity);
     final isWaterLevelDiscrete = _isDiscreteWaterLevel(humidityValue);
     final waterLevelLabel = isWaterLevelDiscrete
         ? (humidityValue == 0 ? 'Low' : 'OK')
         : (_humidity == '---' ? '---' : '$_humidity %');
-    final waterLevelSubtitle = isWaterLevelDiscrete
-        ? (humidityValue == null
-              ? null
-              : '· ${(humidityValue * 100).toStringAsFixed(0)}%')
-        : null;
     final presetLabel = _presetLabel(_preset);
     final activeAlert = _activeAlerts.isEmpty
         ? null
         : _activeAlerts.values.first;
 
-    return Scaffold(
-      body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _getState,
-          child: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Aquarium',
-                      style: Theme.of(context).textTheme.titleMedium,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                  if (appState.isDemo)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: scheme.primary.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Text(
-                        'Demo',
-                        style: Theme.of(context).textTheme.labelMedium
-                            ?.copyWith(color: scheme.primary),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              _surfaceCard(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 130,
-                        height: 150,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(20),
-                          gradient: LinearGradient(
-                            colors: [
-                              scheme.primary.withOpacity(0.4),
-                              scheme.primary.withOpacity(0.1),
-                            ],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                        ),
-                        child: Icon(
-                          Icons.bubble_chart_rounded,
-                          size: 80,
-                          color: scheme.primary,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Tropical Tank',
-                              style: Theme.of(context).textTheme.titleMedium,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Status: ${ledOn ? "Lights on" : "Lights off"}',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: scheme.onSurfaceVariant),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'Preset: $presetLabel',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: scheme.onSurfaceVariant),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Icon(
-                    isOnline ? Icons.wifi_rounded : Icons.wifi_off_rounded,
-                    color: isOnline ? Colors.green : Colors.orange,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    isOnline ? 'Online' : 'Offline',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: isOnline ? Colors.green : Colors.orange,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const Spacer(),
-                  if (!isOnline)
-                    TextButton.icon(
-                      onPressed: _getState,
-                      icon: const Icon(Icons.refresh_rounded, size: 18),
-                      label: const Text('Reconnect'),
-                    ),
-                ],
-              ),
-              if (!isOnline) ...[
-                const SizedBox(height: 6),
-                Text(
-                  'Reason: ${_offlineReason(_status)}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _formatLastOnline(),
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'IP: $espIp',
-                      style: TextStyle(color: scheme.onSurfaceVariant),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => _copyIp(espIp),
-                    icon: const Icon(Icons.copy_rounded),
-                    tooltip: 'Copy IP',
-                  ),
-                  TextButton(
-                    onPressed: _openSettings,
-                    child: const Text('Change IP'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              if (_hasError)
-                _buildErrorBanner(_status)
-              else if (activeAlert != null)
-                _buildInfoBanner(
-                  icon: activeAlert.icon,
-                  text: activeAlert.message,
-                  color: Colors.red,
-                )
-              else
-                _buildInfoBanner(
-                  icon: Icons.info_outline,
-                  text: _status,
-                  color: scheme.primary,
-                ),
-              const SizedBox(height: 18),
-              GridView.count(
-                crossAxisCount: 2,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                childAspectRatio: 1.4,
-                mainAxisSpacing: 12,
-                crossAxisSpacing: 12,
-                children: [
-                  _metricCard(
-                    title: 'Temperature',
-                    value: _metricValueWidget(
-                      isLoading: _isLoading,
-                      hasData: _temperature != '---',
-                      isOnline: isOnline,
-                      valueText: '$_temperature C',
-                      offlineText: 'Нет данных (offline)',
-                      style: TextStyle(
-                        color: scheme.onSurface,
-                        fontSize: 24,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    updated: _formatUpdatedTime(),
-                    trend: tempTrend != null ? '$tempTrend за 1ч' : null,
-                    icon: Icons.thermostat_rounded,
-                    accent: Colors.deepOrange,
-                  ),
-                  _metricCard(
-                    title: 'Water level',
-                    value: _metricValueWidget(
-                      isLoading: _isLoading,
-                      hasData: _humidity != '---',
-                      isOnline: isOnline,
-                      valueText: waterLevelLabel,
-                      offlineText: 'Нет данных (offline)',
-                      style: TextStyle(
-                        color: scheme.onSurface,
-                        fontSize: 24,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    subtitle: waterLevelSubtitle,
-                    updated: _formatUpdatedTime(),
-                    trend: !isWaterLevelDiscrete && humTrend != null
-                        ? '$humTrend за 1ч'
-                        : null,
-                    icon: Icons.water_drop_rounded,
-                    accent: Colors.blue,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              const SectionHeader(title: 'Статус системы'),
-              const SizedBox(height: 8),
-              _surfaceCard(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    children: [
-                      _kvRow(label: 'Режим', value: _systemMode),
-                      const SizedBox(height: 6),
-                      _kvRow(label: 'Помпа', value: _pumpState),
-                      const SizedBox(height: 6),
-                      _kvRow(
-                        label: 'Компрессор',
-                        value: _compressorState == 'on' ? 'ON' : 'OFF',
-                      ),
-                      const SizedBox(height: 6),
-                      _kvRow(label: 'Время ESP', value: _espTime),
-                      const SizedBox(height: 6),
-                      _kvRow(label: 'Синхронизация', value: _timeSynced),
-                      const SizedBox(height: 6),
-                      _kvRow(label: 'История', value: _historyInfo),
-                      const SizedBox(height: 6),
-                      _kvRow(label: 'Мойка', value: _cleanState),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              const SectionHeader(title: 'Аналитика'),
-              const SizedBox(height: 8),
-              _surfaceCard(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    children: [
-                      _kvRow(
-                        label: 'Наклон температуры',
-                        value: '$_tempSlope C/час',
-                      ),
-                      const SizedBox(height: 6),
-                      _kvRow(
-                        label: 'Наклон уровня',
-                        value: '$_levelSlope %/час',
-                      ),
-                      const SizedBox(height: 6),
-                      _kvRow(
-                        label: 'До критической температуры',
-                        value: _daysToLowTemp,
-                      ),
-                      const SizedBox(height: 6),
-                      _kvRow(
-                        label: 'До критического уровня',
-                        value: _daysToLowLevel,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _surfaceCard(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.swap_horiz_rounded,
-                                  color: scheme.primary,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    'Flow direction',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyMedium
-                                        ?.copyWith(
-                                          color: scheme.onSurfaceVariant,
-                                        ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.clip,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: Text(
-                                _flowLabel(_flowDirection),
-                                style: Theme.of(context).textTheme.bodyMedium,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                _flowButton(
-                                  direction: FlowDirection.left,
-                                  icon: Icons.arrow_left_rounded,
-                                  isEnabled: isFlowEnabled,
-                                ),
-                                const SizedBox(width: 8),
-                                _flowButton(
-                                  direction: FlowDirection.stop,
-                                  icon: Icons.stop_circle_outlined,
-                                  isEnabled: isFlowEnabled,
-                                ),
-                                const SizedBox(width: 8),
-                                _flowButton(
-                                  direction: FlowDirection.right,
-                                  icon: Icons.arrow_right_rounded,
-                                  isEnabled: isFlowEnabled,
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            _statusRow(_flowStatus),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _surfaceCard(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            LayoutBuilder(
-                              builder: (context, constraints) {
-                                final isTight = constraints.maxWidth < 210;
-                                final headerLeft = Row(
-                                  children: [
-                                    const Icon(
-                                      Icons.lightbulb_rounded,
-                                      color: Colors.amber,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        'Lighting',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodyMedium
-                                            ?.copyWith(
-                                              color: scheme.onSurfaceVariant,
-                                            ),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.clip,
-                                      ),
-                                    ),
-                                  ],
-                                );
-                                final modeToggle = SegmentedButton<bool>(
-                                  showSelectedIcon: false,
-                                  style: ButtonStyle(
-                                    fixedSize: const MaterialStatePropertyAll(
-                                      Size(56, 32),
-                                    ),
-                                    padding: const MaterialStatePropertyAll(
-                                      EdgeInsets.zero,
-                                    ),
-                                    textStyle: MaterialStatePropertyAll(
-                                      Theme.of(context).textTheme.labelMedium ??
-                                          const TextStyle(),
-                                    ),
-                                    tapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                    visualDensity: VisualDensity.compact,
-                                    shape: MaterialStatePropertyAll(
-                                      RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                    ),
-                                  ),
-                                  segments: const [
-                                    ButtonSegment(
-                                      value: false,
-                                      label: Text(
-                                        'Man',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    ButtonSegment(
-                                      value: true,
-                                      label: Text(
-                                        'Auto',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ],
-                                  selected: {_isLightingAuto},
-                                  onSelectionChanged: (selection) {
-                                    setState(() {
-                                      _isLightingAuto = selection.first;
-                                    });
-                                  },
-                                );
-                                if (isTight) {
-                                  return Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      headerLeft,
-                                      const SizedBox(height: 8),
-                                      Align(
-                                        alignment: Alignment.centerLeft,
-                                        child: modeToggle,
-                                      ),
-                                    ],
-                                  );
-                                }
-                                return Row(
-                                  children: [
-                                    Expanded(child: headerLeft),
-                                    const SizedBox(width: 8),
-                                    modeToggle,
-                                  ],
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 12),
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      _kvSplitRow(
-                                        label: 'Requested',
-                                        value: requestedLedOn,
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.bodySmall,
-                                      ),
-                                      const SizedBox(height: 4),
-                                      _kvSplitRow(
-                                        label: 'Actual',
-                                        value: ledOn ? 'On' : 'Off',
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.bodySmall,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Switch(
-                                  value: ledOn,
-                                  onChanged: _isLightingAuto
-                                      ? null
-                                      : (_) => _toggleLight(),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            _statusRow(_lightingStatus),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              _surfaceCard(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.air_rounded, color: scheme.primary),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Компрессор',
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(color: scheme.onSurfaceVariant),
-                            ),
-                          ),
-                          Text(
-                            _compressorState == 'on' ? 'ON' : 'OFF',
-                            style: Theme.of(context).textTheme.labelLarge,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: isOnline && !_isLoading
-                                  ? () => _setCompressor(true)
-                                  : null,
-                              icon: const Icon(Icons.play_arrow_rounded),
-                              label: const Text('Компрессор ON'),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: isOnline && !_isLoading
-                                  ? () => _setCompressor(false)
-                                  : null,
-                              icon: const Icon(Icons.stop_rounded),
-                              label: const Text('Компрессор OFF'),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      _statusRow(_compressorStatus),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const SectionHeader(title: 'Presets'),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  _presetButton(
-                    AquariumPreset.day,
-                    'Day',
-                    Icons.wb_sunny_rounded,
-                  ),
-                  const SizedBox(width: 8),
-                  _presetButton(
-                    AquariumPreset.night,
-                    'Night',
-                    Icons.nights_stay_rounded,
-                  ),
-                  const SizedBox(width: 8),
-                  _presetButton(
-                    AquariumPreset.feeding,
-                    'Feeding',
-                    Icons.restaurant_rounded,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              const SectionHeader(title: 'Quick actions'),
-              const SizedBox(height: 8),
-              Column(
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _getState,
-                          icon: _isLoading
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.sync_rounded),
-                          label: const Text('Refresh data'),
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(44),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _getState,
-                          icon: const Icon(Icons.wifi_tethering_rounded),
-                          label: const Text('Reconnect'),
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(44),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      _formatUpdatedTime(),
-                      style: TextStyle(
-                        color: scheme.onSurfaceVariant,
-                        fontSize: 11,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () =>
-                              _applyPreset(_preset, isOnline: isOnline),
-                          icon: const Icon(Icons.auto_awesome_rounded),
-                          label: Text('Apply $presetLabel'),
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(44),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _syncTime,
-                          icon: const Icon(Icons.schedule_rounded),
-                          label: const Text('Sync time'),
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(44),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: () => _emergencyOff(isOnline: isOnline),
-                      icon: const Icon(Icons.power_settings_new_rounded),
-                      label: const Text('Emergency OFF'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size.fromHeight(44),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              SectionHeader(
-                title: 'History',
-                trailing: TextButton.icon(
-                  onPressed: widget.onOpenHistory,
-                  icon: const Icon(Icons.history_rounded, size: 18),
-                  label: const Text(
-                    'Open history',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              _historyList(),
-            ],
-          ),
-        ),
-      ),
+    return _homeRedesign(
+      isOnline: isOnline,
+      espIp: espIp,
+      ledOn: ledOn,
+      requestedLedOn: requestedLedOn,
+      isFlowEnabled: isFlowEnabled,
+      waterLevelLabel: waterLevelLabel,
+      presetLabel: presetLabel,
+      activeAlert: activeAlert,
     );
   }
 }

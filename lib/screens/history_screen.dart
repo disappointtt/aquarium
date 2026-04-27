@@ -29,7 +29,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   String _dayLabel(DateTime date) {
     final today = DateUtils.dateOnly(DateTime.now());
-    final yesterday = DateUtils.dateOnly(DateTime.now().subtract(const Duration(days: 1)));
+    final yesterday = DateUtils.dateOnly(
+      DateTime.now().subtract(const Duration(days: 1)),
+    );
     final day = DateUtils.dateOnly(date);
     if (day == today) return 'Today';
     if (day == yesterday) return 'Yesterday';
@@ -51,18 +53,24 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final temp = snapshot.temperature != null
         ? '${snapshot.temperature!.toStringAsFixed(1)}${snapshot.temperatureUnit}'
         : '-';
-    final water = snapshot.waterLevelPercent != null ? '${snapshot.waterLevelPercent}%' : '-';
+    final water = snapshot.waterLevelPercent != null
+        ? '${snapshot.waterLevelPercent}%'
+        : '-';
     String light;
     if (snapshot.lightingActual == null) {
       light = '-';
     } else {
       light = snapshot.lightingActual! ? 'ON' : 'OFF';
       if (snapshot.lightingMode != null) {
-        final mode = snapshot.lightingMode == HistoryLightingMode.auto ? 'Auto' : 'Manual';
+        final mode = snapshot.lightingMode == HistoryLightingMode.auto
+            ? 'Auto'
+            : 'Manual';
         light = '$light ($mode)';
       }
     }
-    final flow = snapshot.flowDirection != null ? _historyFlowLabel(snapshot.flowDirection!) : '-';
+    final flow = snapshot.flowDirection != null
+        ? _historyFlowLabel(snapshot.flowDirection!)
+        : '-';
     return 'Temp: $temp | Water: $water | Light: $light | Flow: $flow';
   }
 
@@ -75,7 +83,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
     return _formatEventTime(event.time);
   }
-
 
   HistoryCategory _mapFilterToCategory(HistoryFilter filter) {
     return switch (filter) {
@@ -91,35 +98,36 @@ class _HistoryScreenState extends State<HistoryScreen> {
     if (_historyFilter == HistoryFilter.all) {
       return _historyStore.getAllSorted(desc: desc);
     }
-    return _historyStore.filterByType(_mapFilterToCategory(_historyFilter), desc: desc);
+    return _historyStore.filterByType(
+      _mapFilterToCategory(_historyFilter),
+      desc: desc,
+    );
   }
 
   void _exportEvents({required bool asJson}) {
-    final items = _filteredEvents()
-        .map((e) {
-          final snapshot = e.snapshot;
-          final lightingMode = snapshot?.lightingMode;
-          final flowDirection = snapshot?.flowDirection;
-          final connectionState = snapshot?.connectionState;
-          return {
-            'id': e.id,
-            'time': e.time.toIso8601String(),
-            'title': e.title,
-            'message': e.message ?? '',
-            'category': e.category.name,
-            'result': e.ok ? 'OK' : 'Fail',
-            'temperature': snapshot?.temperature,
-            'temperatureUnit': snapshot?.temperatureUnit,
-            'waterLevelPercent': snapshot?.waterLevelPercent,
-            'lightingRequested': snapshot?.lightingRequested,
-            'lightingActual': snapshot?.lightingActual,
-            'lightingMode': lightingMode?.name,
-            'flowDirection': flowDirection?.name,
-            'connectionState': connectionState?.name,
-            'lastSeen': snapshot?.lastSeen?.toIso8601String(),
-          };
-        })
-        .toList();
+    final items = _filteredEvents().map((e) {
+      final snapshot = e.snapshot;
+      final lightingMode = snapshot?.lightingMode;
+      final flowDirection = snapshot?.flowDirection;
+      final connectionState = snapshot?.connectionState;
+      return {
+        'id': e.id,
+        'time': e.time.toIso8601String(),
+        'title': e.title,
+        'message': e.message ?? '',
+        'category': e.category.name,
+        'result': e.ok ? 'OK' : 'Fail',
+        'temperature': snapshot?.temperature,
+        'temperatureUnit': snapshot?.temperatureUnit,
+        'waterLevelPercent': snapshot?.waterLevelPercent,
+        'lightingRequested': snapshot?.lightingRequested,
+        'lightingActual': snapshot?.lightingActual,
+        'lightingMode': lightingMode?.name,
+        'flowDirection': flowDirection?.name,
+        'connectionState': connectionState?.name,
+        'lastSeen': snapshot?.lastSeen?.toIso8601String(),
+      };
+    }).toList();
     if (asJson) {
       final payload = jsonEncode(items);
       Clipboard.setData(ClipboardData(text: payload));
@@ -134,11 +142,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
       Clipboard.setData(ClipboardData(text: rows.join('\n')));
     }
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Exported ${asJson ? 'JSON' : 'CSV'} to clipboard.')),
+      SnackBar(
+        content: Text('Exported ${asJson ? 'JSON' : 'CSV'} to clipboard.'),
+      ),
     );
   }
-
-
 
   void _showExportDialog() {
     showDialog<void>(
@@ -171,9 +179,55 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   Widget _eventTile(HistoryEvent event) {
-    return HistoryItemTile(
-      event: event,
-      subtitle: _eventSubtitle(event),
+    return HistoryItemTile(event: event, subtitle: _eventSubtitle(event));
+  }
+
+  Widget _header(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: scheme.primary,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(Icons.history_rounded, color: scheme.onPrimary),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'История',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              Text(
+                'Команды, показания и алерты',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+        OutlinedButton.icon(
+          onPressed: _showExportDialog,
+          icon: const Icon(Icons.download_rounded, size: 18),
+          label: const Text(
+            'Export',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
     );
   }
 
@@ -186,17 +240,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: SectionHeader(
-                title: 'History',
-                titleStyle: Theme.of(context).textTheme.titleMedium,
-                trailing: OutlinedButton.icon(
-                  onPressed: _showExportDialog,
-                  icon: const Icon(Icons.download_rounded, size: 18),
-                  label: const Text('Export', maxLines: 1, overflow: TextOverflow.ellipsis),
-                ),
-              ),
+              child: _header(context),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 14),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: InfoCard(
@@ -233,9 +279,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       children: [
                         Text(
                           'Sort',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
+                          style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(color: scheme.onSurfaceVariant),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -243,8 +287,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         const SizedBox(width: 12),
                         SegmentedButton<HistorySort>(
                           style: ButtonStyle(
-                            fixedSize:
-                                const MaterialStatePropertyAll(Size(72, 32)),
+                            fixedSize: const MaterialStatePropertyAll(
+                              Size(72, 32),
+                            ),
                             padding: const MaterialStatePropertyAll(
                               EdgeInsets.symmetric(horizontal: 0),
                             ),
@@ -259,11 +304,19 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           segments: const [
                             ButtonSegment(
                               value: HistorySort.desc,
-                              label: Text('DESC', maxLines: 1, overflow: TextOverflow.ellipsis),
+                              label: Text(
+                                'DESC',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                             ButtonSegment(
                               value: HistorySort.asc,
-                              label: Text('ASC', maxLines: 1, overflow: TextOverflow.ellipsis),
+                              label: Text(
+                                'ASC',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                           ],
                           selected: {_historySort},
@@ -289,10 +342,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     return Center(
                       child: Text(
                         'No events yet. Try Refresh or apply a preset.',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: scheme.onSurfaceVariant),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -309,9 +361,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           padding: const EdgeInsets.only(top: 8, bottom: 6),
                           child: Text(
                             _dayLabel(event.time),
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelMedium
+                            style: Theme.of(context).textTheme.labelMedium
                                 ?.copyWith(color: scheme.onSurfaceVariant),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
