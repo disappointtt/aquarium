@@ -7,6 +7,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/history_store.dart';
 import '../main.dart';
@@ -29,6 +30,65 @@ class Reading {
 enum AquariumPreset { day, night, feeding }
 
 enum FlowDirection { left, stop, right }
+
+class DeviceSchedule {
+  final TimeOfDay start;
+  final TimeOfDay end;
+
+  const DeviceSchedule({required this.start, required this.end});
+
+  bool get isActiveNow {
+    final now = TimeOfDay.now();
+    final current = now.hour * 60 + now.minute;
+    final startMinutes = start.hour * 60 + start.minute;
+    final endMinutes = end.hour * 60 + end.minute;
+    if (startMinutes == endMinutes) return true;
+    if (startMinutes < endMinutes) {
+      return current >= startMinutes && current < endMinutes;
+    }
+    return current >= startMinutes || current < endMinutes;
+  }
+
+  String get label => '${_format(start)}-${_format(end)}';
+
+  static String _format(TimeOfDay time) {
+    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+class PresetConfig {
+  final String label;
+  final IconData icon;
+  final DeviceSchedule light;
+  final DeviceSchedule compressor;
+  final DeviceSchedule pump;
+  final DeviceSchedule feeder;
+
+  const PresetConfig({
+    required this.label,
+    required this.icon,
+    required this.light,
+    required this.compressor,
+    required this.pump,
+    required this.feeder,
+  });
+
+  PresetConfig copyWith({
+    DeviceSchedule? light,
+    DeviceSchedule? compressor,
+    DeviceSchedule? pump,
+    DeviceSchedule? feeder,
+  }) {
+    return PresetConfig(
+      label: label,
+      icon: icon,
+      light: light ?? this.light,
+      compressor: compressor ?? this.compressor,
+      pump: pump ?? this.pump,
+      feeder: feeder ?? this.feeder,
+    );
+  }
+}
 
 class AquariumAlert {
   final String key;
@@ -76,6 +136,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _timeSynced = '---';
   String _historyInfo = '---';
   String _cleanState = '---';
+  bool _canClean = false;
   String _tempSlope = '--';
   String _levelSlope = '--';
   String _daysToLowTemp = '--';
@@ -87,9 +148,72 @@ class _HomeScreenState extends State<HomeScreen> {
   DateTime? _lightOffSince;
   final Map<String, DateTime> _lastAlertTimes = {};
   final Map<String, AquariumAlert> _activeAlerts = {};
+  final Map<AquariumPreset, PresetConfig> _presetConfigs = {
+    AquariumPreset.day: PresetConfig(
+      label: 'Day',
+      icon: Icons.wb_sunny_rounded,
+      light: DeviceSchedule(
+        start: TimeOfDay(hour: 9, minute: 0),
+        end: TimeOfDay(hour: 21, minute: 0),
+      ),
+      compressor: DeviceSchedule(
+        start: TimeOfDay(hour: 0, minute: 0),
+        end: TimeOfDay(hour: 0, minute: 0),
+      ),
+      pump: DeviceSchedule(
+        start: TimeOfDay(hour: 12, minute: 0),
+        end: TimeOfDay(hour: 12, minute: 10),
+      ),
+      feeder: DeviceSchedule(
+        start: TimeOfDay(hour: 8, minute: 0),
+        end: TimeOfDay(hour: 8, minute: 2),
+      ),
+    ),
+    AquariumPreset.night: PresetConfig(
+      label: 'Night',
+      icon: Icons.nights_stay_rounded,
+      light: DeviceSchedule(
+        start: TimeOfDay(hour: 21, minute: 0),
+        end: TimeOfDay(hour: 9, minute: 0),
+      ),
+      compressor: DeviceSchedule(
+        start: TimeOfDay(hour: 0, minute: 0),
+        end: TimeOfDay(hour: 0, minute: 0),
+      ),
+      pump: DeviceSchedule(
+        start: TimeOfDay(hour: 0, minute: 0),
+        end: TimeOfDay(hour: 0, minute: 0),
+      ),
+      feeder: DeviceSchedule(
+        start: TimeOfDay(hour: 20, minute: 0),
+        end: TimeOfDay(hour: 20, minute: 2),
+      ),
+    ),
+    AquariumPreset.feeding: PresetConfig(
+      label: 'Feed',
+      icon: Icons.restaurant_rounded,
+      light: DeviceSchedule(
+        start: TimeOfDay(hour: 8, minute: 0),
+        end: TimeOfDay(hour: 22, minute: 0),
+      ),
+      compressor: DeviceSchedule(
+        start: TimeOfDay(hour: 0, minute: 0),
+        end: TimeOfDay(hour: 0, minute: 0),
+      ),
+      pump: DeviceSchedule(
+        start: TimeOfDay(hour: 0, minute: 0),
+        end: TimeOfDay(hour: 0, minute: 0),
+      ),
+      feeder: DeviceSchedule(
+        start: TimeOfDay(hour: 13, minute: 0),
+        end: TimeOfDay(hour: 13, minute: 2),
+      ),
+    ),
+  };
 
   static const Duration _alertRepeatInterval = Duration(minutes: 2);
   static const Duration _lightOffAlertDelay = Duration(minutes: 3);
+  static const String _presetPrefsPrefix = 'preset_config';
 
   String _apiBase(String ip) => 'http://$ip';
 
@@ -146,6 +270,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _timeSynced = 'OK';
       _historyInfo = '${_history.length} / 120';
       _cleanState = 'Ready';
+      _canClean = true;
       _tempSlope = '0.000';
       _levelSlope = '0.000';
       _daysToLowTemp = '--';
@@ -325,6 +450,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _cleanState = mode == 'CLEANING'
         ? '$progress%'
         : (canClean ? 'Ready' : 'Blocked');
+    _canClean = canClean;
     _flowDirection = data['motor'] == 1 ? _flowDirection : FlowDirection.stop;
   }
 
@@ -513,7 +639,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   HistoryFlowDirection _mapFlowDirection(FlowDirection direction) {
     return switch (direction) {
-      FlowDirection.left => HistoryFlowDirection.left,
+      FlowDirection.left => HistoryFlowDirection.right,
       FlowDirection.stop => HistoryFlowDirection.stop,
       FlowDirection.right => HistoryFlowDirection.right,
     };
@@ -521,9 +647,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String _historyFlowLabel(HistoryFlowDirection direction) {
     return switch (direction) {
-      HistoryFlowDirection.left => 'Left',
+      HistoryFlowDirection.left => 'Forward',
       HistoryFlowDirection.stop => 'Stop',
-      HistoryFlowDirection.right => 'Right',
+      HistoryFlowDirection.right => 'Forward',
     };
   }
 
@@ -821,28 +947,184 @@ class _HomeScreenState extends State<HomeScreen> {
     ).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
   }
 
-  void _editPreset(AquariumPreset preset) {
-    final label = switch (preset) {
-      AquariumPreset.day => 'Day',
-      AquariumPreset.night => 'Night',
-      AquariumPreset.feeding => 'Feeding',
-    };
-    showDialog<void>(
+  int _timeToMinutes(TimeOfDay time) => time.hour * 60 + time.minute;
+
+  TimeOfDay _minutesToTime(int minutes) {
+    final normalized = minutes.clamp(0, 1439);
+    return TimeOfDay(hour: normalized ~/ 60, minute: normalized % 60);
+  }
+
+  String _presetKey(AquariumPreset preset, String device, String edge) {
+    return '$_presetPrefsPrefix.${preset.name}.$device.$edge';
+  }
+
+  Future<void> _loadPresetConfigs() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      for (final entry in _presetConfigs.entries.toList()) {
+        final preset = entry.key;
+        final config = entry.value;
+        DeviceSchedule load(String device, DeviceSchedule fallback) {
+          final start = prefs.getInt(_presetKey(preset, device, 'start'));
+          final end = prefs.getInt(_presetKey(preset, device, 'end'));
+          if (start == null || end == null) return fallback;
+          return DeviceSchedule(
+            start: _minutesToTime(start),
+            end: _minutesToTime(end),
+          );
+        }
+
+        _presetConfigs[preset] = config.copyWith(
+          light: load('light', config.light),
+          compressor: load('compressor', config.compressor),
+          pump: load('pump', config.pump),
+          feeder: load('feeder', config.feeder),
+        );
+      }
+    });
+  }
+
+  Future<void> _savePresetConfig(
+    AquariumPreset preset,
+    PresetConfig config,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    Future<void> save(String device, DeviceSchedule schedule) async {
+      await prefs.setInt(
+        _presetKey(preset, device, 'start'),
+        _timeToMinutes(schedule.start),
+      );
+      await prefs.setInt(
+        _presetKey(preset, device, 'end'),
+        _timeToMinutes(schedule.end),
+      );
+    }
+
+    await save('light', config.light);
+    await save('compressor', config.compressor);
+    await save('pump', config.pump);
+    await save('feeder', config.feeder);
+  }
+
+  Future<DeviceSchedule?> _editSchedule(
+    String title,
+    DeviceSchedule current,
+  ) async {
+    final start = await showTimePicker(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit preset'),
-        content: Text('Configure $label preset settings here.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
+      initialTime: current.start,
+      helpText: '$title start',
+    );
+    if (start == null || !mounted) return null;
+    final end = await showTimePicker(
+      context: context,
+      initialTime: current.end,
+      helpText: '$title end',
+    );
+    if (end == null) return null;
+    return DeviceSchedule(start: start, end: end);
+  }
+
+  Future<void> _editPreset(AquariumPreset preset) async {
+    var draft = _presetConfigs[preset]!;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> edit(
+              String title,
+              DeviceSchedule current,
+              ValueChanged<DeviceSchedule> update,
+            ) async {
+              final next = await _editSchedule(title, current);
+              if (next == null) return;
+              setDialogState(() => update(next));
+            }
+
+            Widget row(
+              String title,
+              IconData icon,
+              DeviceSchedule schedule,
+              ValueChanged<DeviceSchedule> update,
+            ) {
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(icon),
+                title: Text(title),
+                subtitle: Text(schedule.label),
+                trailing: IconButton(
+                  tooltip: 'Edit',
+                  icon: const Icon(Icons.settings_rounded),
+                  onPressed: () => edit(title, schedule, update),
+                ),
+              );
+            }
+
+            return AlertDialog(
+              title: Text('${draft.label} preset'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    row(
+                      'Свет',
+                      Icons.lightbulb_rounded,
+                      draft.light,
+                      (value) => draft = draft.copyWith(light: value),
+                    ),
+                    row(
+                      'Компрессор',
+                      Icons.air_rounded,
+                      draft.compressor,
+                      (value) => draft = draft.copyWith(compressor: value),
+                    ),
+                    row(
+                      'Помпа',
+                      Icons.waterfall_chart,
+                      draft.pump,
+                      (value) => draft = draft.copyWith(pump: value),
+                    ),
+                    row(
+                      'Кормушка',
+                      Icons.restaurant_rounded,
+                      draft.feeder,
+                      (value) => draft = draft.copyWith(feeder: value),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () async {
+                    setState(() {
+                      _presetConfigs[preset] = draft;
+                    });
+                    await _savePresetConfig(preset, draft);
+                    if (mounted && dialogContext.mounted) {
+                      Navigator.pop(dialogContext);
+                    }
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
-  void _applyPreset(AquariumPreset preset, {required bool isOnline}) {
+  Future<void> _applyPreset(
+    AquariumPreset preset, {
+    required bool isOnline,
+  }) async {
+    final config = _presetConfigs[preset]!;
     setState(() {
       _preset = preset;
       _status = isOnline
@@ -850,6 +1132,27 @@ class _HomeScreenState extends State<HomeScreen> {
           : 'Preset queued: ${_presetLabel(preset)}.';
       _hasError = false;
     });
+    if (isOnline && !AppScope.of(context).isDemo) {
+      try {
+        final base = _apiBase(AppScope.of(context).espIp);
+        final lightState = config.light.isActiveNow ? 'on' : 'off';
+        final compressorState = config.compressor.isActiveNow ? 'on' : 'off';
+        final feederState = config.feeder.isActiveNow ? 'on' : 'off';
+        await http.get(Uri.parse('$base/led?state=$lightState'));
+        await http.get(Uri.parse('$base/compressor?state=$compressorState'));
+        await http.get(Uri.parse('$base/motor?state=$feederState&dir=forward'));
+        if (config.pump.isActiveNow) {
+          await http.get(Uri.parse('$base/clean'));
+        }
+        await _getState();
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _status = 'Preset error: ${e.toString()}';
+          _hasError = true;
+        });
+      }
+    }
     _addEvent(
       HistoryEvent(
         id: _newEventId(),
@@ -864,19 +1167,34 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _presetLabel(AquariumPreset preset) {
-    return switch (preset) {
-      AquariumPreset.day => 'Day',
-      AquariumPreset.night => 'Night',
-      AquariumPreset.feeding => 'Feeding',
-    };
+    return _presetConfigs[preset]?.label ?? preset.name;
   }
 
   Future<void> _syncTime() async {
+    final appState = AppScope.of(context);
     setState(() {
       _status = 'Syncing time...';
       _hasError = false;
     });
-    await Future<void>.delayed(const Duration(milliseconds: 600));
+    if (!appState.isDemo) {
+      try {
+        final response = await http
+            .get(Uri.parse('${_apiBase(appState.espIp)}/sync-time'))
+            .timeout(const Duration(seconds: 8));
+        if (response.statusCode != 200) {
+          throw Exception('HTTP ${response.statusCode}');
+        }
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _status = 'Time sync error: ${e.toString()}';
+          _hasError = true;
+        });
+        return;
+      }
+    } else {
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+    }
     if (!mounted) return;
     setState(() {
       _status = 'Time synced.';
@@ -916,10 +1234,68 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String _flowLabel(FlowDirection direction) {
     return switch (direction) {
-      FlowDirection.left => 'Left',
-      FlowDirection.stop => 'Stop',
-      FlowDirection.right => 'Right',
+      FlowDirection.left => 'ON',
+      FlowDirection.stop => 'OFF',
+      FlowDirection.right => 'ON',
     };
+  }
+
+  Future<void> _startCleaning() async {
+    final appState = AppScope.of(context);
+    setState(() {
+      _status = 'Starting aquarium cleaning...';
+      _hasError = false;
+    });
+    if (appState.isDemo) {
+      setState(() {
+        _pumpState = 'ON';
+        _cleanState = '0%';
+        _status = 'Aquarium cleaning started (demo).';
+      });
+      return;
+    }
+    try {
+      final response = await http
+          .get(Uri.parse('${_apiBase(appState.espIp)}/clean'))
+          .timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}');
+      }
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      if (data['status'] == 'blocked') {
+        throw Exception(
+          'Cleaning blocked: water level ${data['currentPercent']}%',
+        );
+      }
+      if (data['status'] == 'busy') {
+        setState(() {
+          _status = 'Cleaning is already running.';
+        });
+        return;
+      }
+      _updateSystemStatus(data);
+      setState(() {
+        _status = 'Aquarium cleaning started.';
+        _hasError = false;
+      });
+      _addEvent(
+        HistoryEvent(
+          id: _newEventId(),
+          time: DateTime.now(),
+          title: 'Aquarium cleaning',
+          message: 'Started',
+          icon: Icons.water_drop_rounded,
+          category: HistoryCategory.commands,
+          ok: true,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _status = 'Cleaning error: ${e.toString()}';
+        _hasError = true;
+      });
+    }
   }
 
   Future<void> _setFlowDirection(FlowDirection direction) async {
@@ -931,10 +1307,9 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!appState.isDemo) {
       try {
         final state = direction == FlowDirection.stop ? 'off' : 'on';
-        final dir = direction == FlowDirection.left ? 'back' : 'forward';
         final url = direction == FlowDirection.stop
             ? '${_apiBase(appState.espIp)}/motor?state=$state'
-            : '${_apiBase(appState.espIp)}/motor?state=$state&dir=$dir';
+            : '${_apiBase(appState.espIp)}/motor?state=$state&dir=forward';
         final response = await http
             .get(Uri.parse(url))
             .timeout(const Duration(seconds: 8));
@@ -963,9 +1338,9 @@ class _HomeScreenState extends State<HomeScreen> {
       HistoryEvent(
         id: _newEventId(),
         time: DateTime.now(),
-        title: 'Flow ${_flowLabel(direction)}',
+        title: 'Feeder ${_flowLabel(direction)}',
         message: 'Applied',
-        icon: Icons.swap_horiz_rounded,
+        icon: Icons.restaurant_rounded,
         category: HistoryCategory.commands,
         ok: true,
       ),
@@ -1052,7 +1427,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Icon(icon, color: isActive ? activeColor : baseColor),
             const SizedBox(height: 6),
             Text(
-              _flowLabel(direction),
+              'Кормушка ${_flowLabel(direction)}',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: isActive ? activeColor : baseColor,
               ),
@@ -1239,9 +1614,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final isActive = preset == _preset;
     final isOnline = !_hasError && _temperature != '---';
     final subtitle = switch (preset) {
-      AquariumPreset.day => 'Light on · Flow right',
-      AquariumPreset.night => 'Light off · Flow left',
-      AquariumPreset.feeding => 'Light on · Flow stop',
+      AquariumPreset.day => 'Light on · Feeder on',
+      AquariumPreset.night => 'Light off · Feeder off',
+      AquariumPreset.feeding => 'Light on · Feeder off',
     };
     final schedule = switch (preset) {
       AquariumPreset.day => '09:00–21:00',
@@ -1587,54 +1962,198 @@ class _HomeScreenState extends State<HomeScreen> {
   ) {
     final scheme = Theme.of(context).colorScheme;
     final isActive = preset == _preset;
-    final isOnline = !_hasError && _temperature != '---';
+    final config = _presetConfigs[preset]!;
     return Expanded(
-      child: InkWell(
-        onTap: () => _applyPreset(preset, isOnline: isOnline),
-        onLongPress: () => _editPreset(preset),
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          height: 78,
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: isActive ? scheme.primary.withOpacity(0.12) : scheme.surface,
+      child: Stack(
+        children: [
+          InkWell(
+            onTap: () => _applyPreset(
+              preset,
+              isOnline: !_hasError && _temperature != '---',
+            ),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: isActive ? scheme.primary : scheme.outlineVariant,
+            child: Container(
+              height: 96,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: isActive
+                    ? scheme.primary.withOpacity(0.12)
+                    : scheme.surface,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: isActive ? scheme.primary : scheme.outlineVariant,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    icon,
+                    size: 20,
+                    color: isActive ? scheme.primary : scheme.onSurfaceVariant,
+                  ),
+                  const Spacer(),
+                  Text(
+                    label,
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: isActive
+                          ? scheme.primary
+                          : scheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w800,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    'Свет ${config.light.label}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      fontSize: 10,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
             ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: IconButton(
+              tooltip: 'Preset settings',
+              icon: const Icon(Icons.settings_rounded, size: 17),
+              visualDensity: VisualDensity.compact,
+              onPressed: () => _editPreset(preset),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _quickCommandsInfo() {
+    final scheme = Theme.of(context).colorScheme;
+    return InfoCard(
+      padding: const EdgeInsets.all(12),
+      child: Text(
+        'Refresh обновляет данные с ESP. Sync time запускает синхронизацию времени ESP по Алматы. Emergency OFF выключает свет и кормушку.',
+        style: Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+      ),
+    );
+  }
+
+  Widget _systemStatusGrid(String waterLevelLabel) {
+    return InfoCard(
+      padding: const EdgeInsets.all(12),
+      child: GridView.count(
+        crossAxisCount: 2,
+        childAspectRatio: 3.1,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        children: [
+          _miniStat(
+            'Температура',
+            _temperature == '---' ? '---' : '$_temperature C',
+            Icons.thermostat_rounded,
+          ),
+          _miniStat('Вода', waterLevelLabel, Icons.water_rounded),
+          _miniStat('Кормушка', _flowLabel(_flowDirection), Icons.restaurant),
+          _miniStat('ESP', _espTime, Icons.schedule_rounded),
+        ],
+      ),
+    );
+  }
+
+  Widget _controlPanel({
+    required bool ledOn,
+    required String requestedLedOn,
+    required bool isFlowEnabled,
+    required bool isOnline,
+  }) {
+    return InfoCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        children: [
+          Row(
             children: [
-              Icon(
-                icon,
-                size: 20,
-                color: isActive ? scheme.primary : scheme.onSurfaceVariant,
-              ),
-              const Spacer(),
-              Text(
-                label,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: isActive ? scheme.primary : scheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w800,
+              Expanded(
+                child: _miniStat(
+                  'Свет',
+                  '${ledOn ? "ON" : "OFF"} · $requestedLedOn',
+                  Icons.lightbulb_rounded,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
-              if (!isOnline) ...[
-                const SizedBox(height: 2),
-                Text(
-                  'queued',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+              const SizedBox(width: 8),
+              Switch(
+                value: ledOn,
+                onChanged: _isLightingAuto ? null : (_) => _toggleLight(),
+              ),
             ],
           ),
-        ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _flowButton(
+                direction: FlowDirection.stop,
+                icon: Icons.stop_rounded,
+                isEnabled: isFlowEnabled,
+              ),
+              const SizedBox(width: 8),
+              _flowButton(
+                direction: FlowDirection.right,
+                icon: Icons.play_arrow_rounded,
+                isEnabled: isFlowEnabled,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _primaryActionButton(
+                  label: 'Компрессор ON',
+                  icon: Icons.play_arrow_rounded,
+                  onPressed: isOnline && !_isLoading
+                      ? () => _setCompressor(true)
+                      : null,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _primaryActionButton(
+                  label: 'OFF',
+                  icon: Icons.stop_rounded,
+                  onPressed: isOnline && !_isLoading
+                      ? () => _setCompressor(false)
+                      : null,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _primaryActionButton(
+            label: 'Помпа - чистка аквариума',
+            icon: Icons.water_drop_rounded,
+            onPressed: isOnline && !_isLoading && _canClean
+                ? _startCleaning
+                : null,
+          ),
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Чистка: $_cleanState',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1646,12 +2165,10 @@ class _HomeScreenState extends State<HomeScreen> {
     required String requestedLedOn,
     required bool isFlowEnabled,
     required String waterLevelLabel,
-    required String presetLabel,
     required AquariumAlert? activeAlert,
   }) {
     final scheme = Theme.of(context).colorScheme;
     final appState = AppScope.of(context);
-    final connectionColor = isOnline ? Colors.green : Colors.orange;
     final alertColor = activeAlert == null ? scheme.primary : Colors.red;
     final alertIcon = activeAlert?.icon ?? Icons.info_outline_rounded;
     final alertText = _hasError
@@ -1666,7 +2183,7 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             children: [
               _appHeader(
-                title: 'Аквариум',
+                title: 'Tropical Tank',
                 subtitle:
                     '${isOnline ? "Online" : "Offline"} · ${_formatUpdatedTime()}',
                 icon: Icons.water_drop_rounded,
@@ -1677,81 +2194,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: scheme.primary,
                       )
                     : null,
-              ),
-              const SizedBox(height: 16),
-              InfoCard(
-                padding: EdgeInsets.zero,
-                child: Container(
-                  height: 132,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF12343B),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Stack(
-                    children: [
-                      Align(
-                        alignment: Alignment.bottomCenter,
-                        child: Container(
-                          height: 42,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF2EC4B6).withOpacity(0.78),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  'Tropical Tank',
-                                  style: Theme.of(context).textTheme.titleMedium
-                                      ?.copyWith(
-                                        color: Colors.white,
-                                        fontSize: 22,
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              _statusChip(
-                                icon: isOnline
-                                    ? Icons.wifi_rounded
-                                    : Icons.wifi_off_rounded,
-                                label: isOnline ? 'Online' : 'Offline',
-                                color: connectionColor,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '${ledOn ? "Свет включен" : "Свет выключен"} · поток ${_flowLabel(_flowDirection).toLowerCase()} · $presetLabel',
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: const Color(0xFFBFE7E2)),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const Spacer(),
-                          Text(
-                            waterLevelLabel,
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(
-                                  color: Colors.white,
-                                  fontSize: 28,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
               ),
               const SizedBox(height: 12),
               _buildInfoBanner(
@@ -1790,100 +2232,15 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 16),
               const SectionHeader(title: 'Статус системы'),
               const SizedBox(height: 8),
-              InfoCard(
-                padding: const EdgeInsets.all(12),
-                child: GridView.count(
-                  crossAxisCount: 2,
-                  childAspectRatio: 3.1,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  mainAxisSpacing: 8,
-                  crossAxisSpacing: 8,
-                  children: [
-                    _miniStat('Режим', _systemMode, Icons.tune_rounded),
-                    _miniStat('Помпа', _pumpState, Icons.waterfall_chart),
-                    _miniStat(
-                      'Компрессор',
-                      _compressorState == 'on' ? 'ON' : 'OFF',
-                      Icons.air_rounded,
-                    ),
-                    _miniStat('ESP', _espTime, Icons.schedule_rounded),
-                  ],
-                ),
-              ),
+              _systemStatusGrid(waterLevelLabel),
               const SizedBox(height: 16),
               const SectionHeader(title: 'Управление'),
               const SizedBox(height: 8),
-              InfoCard(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _miniStat(
-                            'Свет',
-                            '${ledOn ? "ON" : "OFF"} · $requestedLedOn',
-                            Icons.lightbulb_rounded,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Switch(
-                          value: ledOn,
-                          onChanged: _isLightingAuto
-                              ? null
-                              : (_) => _toggleLight(),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        _flowButton(
-                          direction: FlowDirection.left,
-                          icon: Icons.arrow_left_rounded,
-                          isEnabled: isFlowEnabled,
-                        ),
-                        const SizedBox(width: 8),
-                        _flowButton(
-                          direction: FlowDirection.stop,
-                          icon: Icons.stop_circle_outlined,
-                          isEnabled: isFlowEnabled,
-                        ),
-                        const SizedBox(width: 8),
-                        _flowButton(
-                          direction: FlowDirection.right,
-                          icon: Icons.arrow_right_rounded,
-                          isEnabled: isFlowEnabled,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _primaryActionButton(
-                            label: 'Компрессор ON',
-                            icon: Icons.play_arrow_rounded,
-                            onPressed: isOnline && !_isLoading
-                                ? () => _setCompressor(true)
-                                : null,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _primaryActionButton(
-                            label: 'OFF',
-                            icon: Icons.stop_rounded,
-                            onPressed: isOnline && !_isLoading
-                                ? () => _setCompressor(false)
-                                : null,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+              _controlPanel(
+                ledOn: ledOn,
+                requestedLedOn: requestedLedOn,
+                isFlowEnabled: isFlowEnabled,
+                isOnline: isOnline,
               ),
               const SizedBox(height: 16),
               const SectionHeader(title: 'Пресеты'),
@@ -1938,6 +2295,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 onPressed: () => _emergencyOff(isOnline: isOnline),
                 danger: true,
               ),
+              _quickCommandsInfo(),
               const SizedBox(height: 16),
               SectionHeader(
                 title: 'История',
@@ -1967,6 +2325,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _loadPresetConfigs();
     _alertRepeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _evaluateAlerts();
     });
@@ -1993,7 +2352,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final waterLevelLabel = isWaterLevelDiscrete
         ? (humidityValue == 0 ? 'Low' : 'OK')
         : (_humidity == '---' ? '---' : '$_humidity %');
-    final presetLabel = _presetLabel(_preset);
     final activeAlert = _activeAlerts.isEmpty
         ? null
         : _activeAlerts.values.first;
@@ -2005,7 +2363,6 @@ class _HomeScreenState extends State<HomeScreen> {
       requestedLedOn: requestedLedOn,
       isFlowEnabled: isFlowEnabled,
       waterLevelLabel: waterLevelLabel,
-      presetLabel: presetLabel,
       activeAlert: activeAlert,
     );
   }
