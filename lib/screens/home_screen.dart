@@ -61,7 +61,6 @@ class PresetConfig {
   final IconData icon;
   final DeviceSchedule light;
   final DeviceSchedule compressor;
-  final DeviceSchedule pump;
   final DeviceSchedule feeder;
 
   const PresetConfig({
@@ -69,14 +68,12 @@ class PresetConfig {
     required this.icon,
     required this.light,
     required this.compressor,
-    required this.pump,
     required this.feeder,
   });
 
   PresetConfig copyWith({
     DeviceSchedule? light,
     DeviceSchedule? compressor,
-    DeviceSchedule? pump,
     DeviceSchedule? feeder,
   }) {
     return PresetConfig(
@@ -84,7 +81,6 @@ class PresetConfig {
       icon: icon,
       light: light ?? this.light,
       compressor: compressor ?? this.compressor,
-      pump: pump ?? this.pump,
       feeder: feeder ?? this.feeder,
     );
   }
@@ -118,7 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _requestedLedState;
   String _temperature = '---';
   String _humidity = '---';
-  String _status = 'Waiting for data. Pull to refresh.';
+  String _status = 'Waiting for data. Auto refresh is starting.';
   bool _hasError = false;
   bool _isLoading = false;
   bool _isLightingAuto = false;
@@ -145,6 +141,8 @@ class _HomeScreenState extends State<HomeScreen> {
   final HistoryStore _historyStore = HistoryStore.instance;
   bool _wasOnline = false;
   Timer? _alertRepeatTimer;
+  Timer? _autoRefreshTimer;
+  bool _isRefreshingReadings = false;
   DateTime? _lightOffSince;
   final Map<String, DateTime> _lastAlertTimes = {};
   final Map<String, AquariumAlert> _activeAlerts = {};
@@ -160,10 +158,6 @@ class _HomeScreenState extends State<HomeScreen> {
         start: TimeOfDay(hour: 0, minute: 0),
         end: TimeOfDay(hour: 0, minute: 0),
       ),
-      pump: DeviceSchedule(
-        start: TimeOfDay(hour: 12, minute: 0),
-        end: TimeOfDay(hour: 12, minute: 10),
-      ),
       feeder: DeviceSchedule(
         start: TimeOfDay(hour: 8, minute: 0),
         end: TimeOfDay(hour: 8, minute: 2),
@@ -177,10 +171,6 @@ class _HomeScreenState extends State<HomeScreen> {
         end: TimeOfDay(hour: 9, minute: 0),
       ),
       compressor: DeviceSchedule(
-        start: TimeOfDay(hour: 0, minute: 0),
-        end: TimeOfDay(hour: 0, minute: 0),
-      ),
-      pump: DeviceSchedule(
         start: TimeOfDay(hour: 0, minute: 0),
         end: TimeOfDay(hour: 0, minute: 0),
       ),
@@ -200,10 +190,6 @@ class _HomeScreenState extends State<HomeScreen> {
         start: TimeOfDay(hour: 0, minute: 0),
         end: TimeOfDay(hour: 0, minute: 0),
       ),
-      pump: DeviceSchedule(
-        start: TimeOfDay(hour: 0, minute: 0),
-        end: TimeOfDay(hour: 0, minute: 0),
-      ),
       feeder: DeviceSchedule(
         start: TimeOfDay(hour: 13, minute: 0),
         end: TimeOfDay(hour: 13, minute: 2),
@@ -213,6 +199,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   static const Duration _alertRepeatInterval = Duration(minutes: 2);
   static const Duration _lightOffAlertDelay = Duration(minutes: 3);
+  static const Duration _autoRefreshInterval = Duration(seconds: 5);
   static const String _presetPrefsPrefix = 'preset_config';
 
   String _apiBase(String ip) => 'http://$ip';
@@ -250,69 +237,90 @@ class _HomeScreenState extends State<HomeScreen> {
     _historyStore.addEvent(event);
   }
 
-  Future<void> _getState() async {
+  Future<void> _getState({
+    bool showLoading = true,
+    bool recordRefreshEvent = true,
+  }) async {
+    if (_isRefreshingReadings || !mounted) return;
+    _isRefreshingReadings = true;
     final appState = AppScope.of(context);
     final espIp = appState.espIp;
-    setState(() {
-      _status = 'Fetching latest readings...';
-      _hasError = false;
-      _isLoading = true;
-    });
-
-    if (appState.isDemo) {
-      final demoTemp = (24 + Random().nextDouble() * 3).toStringAsFixed(1);
-      final demoHum = (40 + Random().nextDouble() * 30).toStringAsFixed(0);
-      final demoLed = Random().nextBool() ? 'on' : 'off';
-      _compressorState = Random().nextBool() ? 'on' : 'off';
-      _systemMode = 'IDLE';
-      _pumpState = 'OFF';
-      _espTime = TimeOfDay.now().format(context);
-      _timeSynced = 'OK';
-      _historyInfo = '${_history.length} / 120';
-      _cleanState = 'Ready';
-      _canClean = true;
-      _tempSlope = '0.000';
-      _levelSlope = '0.000';
-      _daysToLowTemp = '--';
-      _daysToLowLevel = '--';
-      _updateFromResponse(demoLed, demoTemp, demoHum, isDemo: true);
-      _recordRefresh(ok: true, message: 'Demo data updated');
-      return;
+    if (showLoading) {
+      setState(() {
+        _status = 'Fetching latest readings...';
+        _hasError = false;
+        _isLoading = true;
+      });
     }
 
     try {
-      final client = http.Client();
-      final response = await client
-          .get(Uri.parse('${_apiBase(espIp)}/status'))
-          .timeout(const Duration(seconds: 10));
+      if (appState.isDemo) {
+        final demoTemp = (24 + Random().nextDouble() * 3).toStringAsFixed(1);
+        final demoHum = (40 + Random().nextDouble() * 30).toStringAsFixed(0);
+        final demoLed = Random().nextBool() ? 'on' : 'off';
+        _compressorState = Random().nextBool() ? 'on' : 'off';
+        _systemMode = 'IDLE';
+        _pumpState = 'OFF';
+        _espTime = TimeOfDay.now().format(context);
+        _timeSynced = 'OK';
+        _historyInfo = '${_history.length} / 120';
+        _cleanState = 'Ready';
+        _canClean = true;
+        _tempSlope = '0.000';
+        _levelSlope = '0.000';
+        _daysToLowTemp = '--';
+        _daysToLowLevel = '--';
+        _updateFromResponse(demoLed, demoTemp, demoHum, isDemo: true);
+        if (recordRefreshEvent) {
+          _recordRefresh(ok: true, message: 'Demo data updated');
+        }
+        return;
+      }
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as Map<String, dynamic>;
-        final led = _onOffFromFlag(data['led']);
-        final temp = _dashIfNull(data['temp'], fractionDigits: 1);
-        final hum = _dashIfNull(data['levelPercent'], fractionDigits: 1);
-        _updateSystemStatus(data);
-        _updateFromResponse(led, temp, hum, isDemo: false);
-        await _getAnalytics();
-        _recordRefresh(ok: true, message: 'Readings updated');
-      } else {
+      final client = http.Client();
+      try {
+        final response = await client
+            .get(Uri.parse('${_apiBase(espIp)}/status'))
+            .timeout(const Duration(seconds: 10));
+        if (!mounted) return;
+
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body) as Map<String, dynamic>;
+          final led = _onOffFromFlag(data['led']);
+          final temp = _dashIfNull(data['temp'], fractionDigits: 1);
+          final hum = _dashIfNull(data['levelPercent'], fractionDigits: 1);
+          _updateSystemStatus(data);
+          _updateFromResponse(led, temp, hum, isDemo: false);
+          await _getAnalytics();
+          if (recordRefreshEvent) {
+            _recordRefresh(ok: true, message: 'Readings updated');
+          }
+        } else {
+          setState(() {
+            _status = 'HTTP error: ${response.statusCode}';
+            _hasError = true;
+          });
+          _markConnection(false);
+          if (recordRefreshEvent) {
+            _recordRefresh(ok: false, message: 'HTTP ${response.statusCode}');
+          }
+        }
+      } catch (e) {
+        if (!mounted) return;
         setState(() {
-          _status = 'HTTP error: ${response.statusCode}';
+          _status = 'Request error: ${e.toString()}';
           _hasError = true;
         });
         _markConnection(false);
-        _recordRefresh(ok: false, message: 'HTTP ${response.statusCode}');
+        if (recordRefreshEvent) {
+          _recordRefresh(ok: false, message: 'Request error');
+        }
+      } finally {
+        client.close();
       }
-      client.close();
-    } catch (e) {
-      setState(() {
-        _status = 'Request error: ${e.toString()}';
-        _hasError = true;
-      });
-      _markConnection(false);
-      _recordRefresh(ok: false, message: 'Request error');
     } finally {
-      if (mounted) {
+      _isRefreshingReadings = false;
+      if (mounted && showLoading && _isLoading) {
         setState(() {
           _isLoading = false;
         });
@@ -978,7 +986,6 @@ class _HomeScreenState extends State<HomeScreen> {
         _presetConfigs[preset] = config.copyWith(
           light: load('light', config.light),
           compressor: load('compressor', config.compressor),
-          pump: load('pump', config.pump),
           feeder: load('feeder', config.feeder),
         );
       }
@@ -1003,7 +1010,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
     await save('light', config.light);
     await save('compressor', config.compressor);
-    await save('pump', config.pump);
     await save('feeder', config.feeder);
   }
 
@@ -1049,15 +1055,67 @@ class _HomeScreenState extends State<HomeScreen> {
               DeviceSchedule schedule,
               ValueChanged<DeviceSchedule> update,
             ) {
-              return ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(icon),
-                title: Text(title),
-                subtitle: Text(schedule.label),
-                trailing: IconButton(
-                  tooltip: 'Edit',
-                  icon: const Icon(Icons.settings_rounded),
-                  onPressed: () => edit(title, schedule, update),
+              final scheme = Theme.of(context).colorScheme;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Material(
+                  color: Colors.transparent,
+                  child: Ink(
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceVariant.withOpacity(0.42),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: scheme.outlineVariant),
+                    ),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => edit(title, schedule, update),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            Icon(icon, color: scheme.primary),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    title,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(fontWeight: FontWeight.w700),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    schedule.label,
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: scheme.onSurfaceVariant,
+                                        ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            SizedBox(
+                              width: 48,
+                              height: 48,
+                              child: IconButton.filledTonal(
+                                tooltip: 'Настроить',
+                                icon: const Icon(Icons.tune_rounded),
+                                onPressed: () => edit(title, schedule, update),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               );
             }
@@ -1079,12 +1137,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       Icons.air_rounded,
                       draft.compressor,
                       (value) => draft = draft.copyWith(compressor: value),
-                    ),
-                    row(
-                      'Помпа',
-                      Icons.waterfall_chart,
-                      draft.pump,
-                      (value) => draft = draft.copyWith(pump: value),
                     ),
                     row(
                       'Кормушка',
@@ -1141,9 +1193,6 @@ class _HomeScreenState extends State<HomeScreen> {
         await http.get(Uri.parse('$base/led?state=$lightState'));
         await http.get(Uri.parse('$base/compressor?state=$compressorState'));
         await http.get(Uri.parse('$base/motor?state=$feederState&dir=forward'));
-        if (config.pump.isActiveNow) {
-          await http.get(Uri.parse('$base/clean'));
-        }
         await _getState();
       } catch (e) {
         if (!mounted) return;
@@ -1398,51 +1447,6 @@ class _HomeScreenState extends State<HomeScreen> {
         _hasError = true;
       });
     }
-  }
-
-  Widget _flowButton({
-    required FlowDirection direction,
-    required IconData icon,
-    required bool isEnabled,
-  }) {
-    final scheme = Theme.of(context).colorScheme;
-    final isActive = _flowDirection == direction;
-    final activeColor = scheme.primary;
-    final baseColor = scheme.onSurfaceVariant;
-    final content = InkWell(
-      onTap: isEnabled ? () => _setFlowDirection(direction) : null,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        constraints: const BoxConstraints(minHeight: 72),
-        decoration: BoxDecoration(
-          color: isActive ? activeColor.withOpacity(0.12) : scheme.surface,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: isActive ? activeColor : scheme.outlineVariant,
-          ),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: isActive ? activeColor : baseColor),
-            const SizedBox(height: 6),
-            Text(
-              'Кормушка ${_flowLabel(direction)}',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: isActive ? activeColor : baseColor,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-      ),
-    );
-    return Expanded(
-      child: isEnabled
-          ? content
-          : Tooltip(message: 'Not available', child: content),
-    );
   }
 
   Widget _buildInfoBanner({
@@ -1955,79 +1959,100 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _compactPresetButton(
-    AquariumPreset preset,
-    String label,
-    IconData icon,
-  ) {
+  Widget _presetTile(AquariumPreset preset) {
     final scheme = Theme.of(context).colorScheme;
     final isActive = preset == _preset;
     final config = _presetConfigs[preset]!;
-    return Expanded(
-      child: Stack(
-        children: [
-          InkWell(
+    final accent = isActive ? scheme.primary : scheme.onSurfaceVariant;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: Colors.transparent,
+        child: Ink(
+          decoration: BoxDecoration(
+            color: isActive ? scheme.primary.withOpacity(0.12) : scheme.surface,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isActive ? scheme.primary : scheme.outlineVariant,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: InkWell(
             onTap: () => _applyPreset(
               preset,
               isOnline: !_hasError && _temperature != '---',
             ),
             borderRadius: BorderRadius.circular(8),
-            child: Container(
-              height: 96,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: isActive
-                    ? scheme.primary.withOpacity(0.12)
-                    : scheme.surface,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: isActive ? scheme.primary : scheme.outlineVariant,
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
                 children: [
-                  Icon(
-                    icon,
-                    size: 20,
-                    color: isActive ? scheme.primary : scheme.onSurfaceVariant,
-                  ),
-                  const Spacer(),
-                  Text(
-                    label,
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: isActive
-                          ? scheme.primary
-                          : scheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w800,
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: accent.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    child: Icon(config.icon, color: accent, size: 22),
                   ),
-                  Text(
-                    'Свет ${config.light.label}',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                      fontSize: 10,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          config.label,
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(
+                                color: isActive
+                                    ? scheme.primary
+                                    : scheme.onSurface,
+                                fontWeight: FontWeight.w800,
+                              ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          'Свет ${config.light.label}',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: scheme.onSurfaceVariant),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Компрессор ${config.compressor.label} · Кормушка ${config.feeder.label}',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: scheme.onSurfaceVariant),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 52,
+                    height: 52,
+                    child: IconButton.filledTonal(
+                      tooltip: 'Настроить пресет',
+                      icon: const Icon(Icons.tune_rounded),
+                      onPressed: () => _editPreset(preset),
+                    ),
                   ),
                 ],
               ),
             ),
           ),
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: IconButton(
-              tooltip: 'Preset settings',
-              icon: const Icon(Icons.settings_rounded, size: 17),
-              visualDensity: VisualDensity.compact,
-              onPressed: () => _editPreset(preset),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -2045,27 +2070,26 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _systemStatusGrid(String waterLevelLabel) {
+  Widget _controlSwitchRow({
+    required String label,
+    required String value,
+    required IconData icon,
+    required bool isOn,
+    required ValueChanged<bool>? onChanged,
+  }) {
+    return Row(
+      children: [
+        Expanded(child: _miniStat(label, value, icon)),
+        const SizedBox(width: 8),
+        Switch(value: isOn, onChanged: onChanged),
+      ],
+    );
+  }
+
+  Widget _systemStatusGrid() {
     return InfoCard(
       padding: const EdgeInsets.all(12),
-      child: GridView.count(
-        crossAxisCount: 2,
-        childAspectRatio: 3.1,
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
-        children: [
-          _miniStat(
-            'Температура',
-            _temperature == '---' ? '---' : '$_temperature C',
-            Icons.thermostat_rounded,
-          ),
-          _miniStat('Вода', waterLevelLabel, Icons.water_rounded),
-          _miniStat('Кормушка', _flowLabel(_flowDirection), Icons.restaurant),
-          _miniStat('ESP', _espTime, Icons.schedule_rounded),
-        ],
-      ),
+      child: _miniStat('ESP', _espTime, Icons.schedule_rounded),
     );
   }
 
@@ -2075,65 +2099,44 @@ class _HomeScreenState extends State<HomeScreen> {
     required bool isFlowEnabled,
     required bool isOnline,
   }) {
+    final feederOn = _flowDirection != FlowDirection.stop;
+    final compressorOn = _compressorState == 'on';
+    final compressorValue = _compressorState == 'unknown'
+        ? '---'
+        : (compressorOn ? 'ON' : 'OFF');
+
     return InfoCard(
       padding: const EdgeInsets.all(12),
       child: Column(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: _miniStat(
-                  'Свет',
-                  '${ledOn ? "ON" : "OFF"} · $requestedLedOn',
-                  Icons.lightbulb_rounded,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Switch(
-                value: ledOn,
-                onChanged: _isLightingAuto ? null : (_) => _toggleLight(),
-              ),
-            ],
+          _controlSwitchRow(
+            label: 'Свет',
+            value: '${ledOn ? "ON" : "OFF"} · $requestedLedOn',
+            icon: Icons.lightbulb_rounded,
+            isOn: ledOn,
+            onChanged: _isLightingAuto ? null : (_) => _toggleLight(),
           ),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              _flowButton(
-                direction: FlowDirection.stop,
-                icon: Icons.stop_rounded,
-                isEnabled: isFlowEnabled,
-              ),
-              const SizedBox(width: 8),
-              _flowButton(
-                direction: FlowDirection.right,
-                icon: Icons.play_arrow_rounded,
-                isEnabled: isFlowEnabled,
-              ),
-            ],
+          _controlSwitchRow(
+            label: 'Кормушка',
+            value: _flowLabel(_flowDirection),
+            icon: Icons.restaurant_rounded,
+            isOn: feederOn,
+            onChanged: isFlowEnabled && !_isLoading
+                ? (enabled) => _setFlowDirection(
+                    enabled ? FlowDirection.right : FlowDirection.stop,
+                  )
+                : null,
           ),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _primaryActionButton(
-                  label: 'Компрессор ON',
-                  icon: Icons.play_arrow_rounded,
-                  onPressed: isOnline && !_isLoading
-                      ? () => _setCompressor(true)
-                      : null,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _primaryActionButton(
-                  label: 'OFF',
-                  icon: Icons.stop_rounded,
-                  onPressed: isOnline && !_isLoading
-                      ? () => _setCompressor(false)
-                      : null,
-                ),
-              ),
-            ],
+          _controlSwitchRow(
+            label: 'Компрессор',
+            value: compressorValue,
+            icon: Icons.air_rounded,
+            isOn: compressorOn,
+            onChanged: isOnline && !_isLoading
+                ? (enabled) => _setCompressor(enabled)
+                : null,
           ),
           const SizedBox(height: 10),
           _primaryActionButton(
@@ -2232,7 +2235,7 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 16),
               const SectionHeader(title: 'Статус системы'),
               const SizedBox(height: 8),
-              _systemStatusGrid(waterLevelLabel),
+              _systemStatusGrid(),
               const SizedBox(height: 16),
               const SectionHeader(title: 'Управление'),
               const SizedBox(height: 8),
@@ -2245,25 +2248,11 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 16),
               const SectionHeader(title: 'Пресеты'),
               const SizedBox(height: 8),
-              Row(
+              Column(
                 children: [
-                  _compactPresetButton(
-                    AquariumPreset.day,
-                    'Day',
-                    Icons.wb_sunny_rounded,
-                  ),
-                  const SizedBox(width: 8),
-                  _compactPresetButton(
-                    AquariumPreset.night,
-                    'Night',
-                    Icons.nights_stay_rounded,
-                  ),
-                  const SizedBox(width: 8),
-                  _compactPresetButton(
-                    AquariumPreset.feeding,
-                    'Feed',
-                    Icons.restaurant_rounded,
-                  ),
+                  _presetTile(AquariumPreset.day),
+                  _presetTile(AquariumPreset.night),
+                  _presetTile(AquariumPreset.feeding),
                 ],
               ),
               const SizedBox(height: 16),
@@ -2329,11 +2318,20 @@ class _HomeScreenState extends State<HomeScreen> {
     _alertRepeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _evaluateAlerts();
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _getState(recordRefreshEvent: false);
+      _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (_) {
+        if (!mounted) return;
+        _getState(showLoading: false, recordRefreshEvent: false);
+      });
+    });
   }
 
   @override
   void dispose() {
     _alertRepeatTimer?.cancel();
+    _autoRefreshTimer?.cancel();
     super.dispose();
   }
 
