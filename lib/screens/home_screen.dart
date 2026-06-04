@@ -123,8 +123,10 @@ class _HomeScreenState extends State<HomeScreen> {
   DateTime? _lastUpdatedAt;
   AquariumPreset _preset = AquariumPreset.day;
   FlowDirection _flowDirection = FlowDirection.stop;
+  FlowDirection? _requestedFlowDirection;
   String _flowStatus = 'Idle';
   String _compressorState = 'unknown';
+  String? _requestedCompressorState;
   String _compressorStatus = 'Idle';
   String _systemMode = '---';
   String _pumpState = '---';
@@ -331,14 +333,18 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _toggleLight() async {
     final appState = AppScope.of(context);
     final espIp = appState.espIp;
-    final nextState = _ledState.toLowerCase() == 'on' ? 'off' : 'on';
+    if (_requestedLedState != null) return;
+    final previousState = _ledState;
+    final nextState = previousState.toLowerCase() == 'on' ? 'off' : 'on';
     setState(() {
+      _ledState = nextState;
       _requestedLedState = nextState;
       _lightingStatus = 'Sending';
+      _status = 'Light ${nextState.toUpperCase()} sending...';
+      _hasError = false;
     });
     if (appState.isDemo) {
       setState(() {
-        _ledState = nextState;
         _status = 'Light toggled (demo mode).';
         _hasError = false;
         _requestedLedState = null;
@@ -359,19 +365,19 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     try {
-      final client = http.Client();
-      final response = await client
+      final response = await http
           .get(Uri.parse('${_apiBase(espIp)}/led?state=$nextState'))
           .timeout(const Duration(seconds: 10));
 
+      if (!mounted) return;
       if (response.statusCode == 200) {
-        _getState();
-        if (mounted) {
-          setState(() {
-            _requestedLedState = null;
-            _lightingStatus = 'Done';
-          });
-        }
+        setState(() {
+          _requestedLedState = null;
+          _lightingStatus = 'Done';
+          _status = 'Light ${nextState.toUpperCase()} applied.';
+          _hasError = false;
+        });
+        unawaited(_getState(showLoading: false, recordRefreshEvent: false));
         _addEvent(
           HistoryEvent(
             id: _newEventId(),
@@ -385,6 +391,8 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       } else {
         setState(() {
+          _ledState = previousState;
+          _requestedLedState = null;
           _status = 'HTTP error: ${response.statusCode}';
           _hasError = true;
           _lightingStatus = 'Failed';
@@ -401,9 +409,11 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         );
       }
-      client.close();
     } catch (e) {
+      if (!mounted) return;
       setState(() {
+        _ledState = previousState;
+        _requestedLedState = null;
         _status = 'Request error: ${e.toString()}';
         _hasError = true;
         _lightingStatus = 'Failed';
@@ -429,7 +439,7 @@ class _HomeScreenState extends State<HomeScreen> {
     required bool isDemo,
   }) {
     setState(() {
-      _ledState = led;
+      _ledState = _requestedLedState ?? led;
       _temperature = temp;
       _humidity = hum;
       _status = isDemo ? 'Demo readings updated.' : 'Readings updated.';
@@ -448,8 +458,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final pump = _onOffFromFlag(data['pump']);
     final compressor = _onOffFromFlag(data['compressor']);
     final canClean = _onOffFromFlag(data['canClean']) == 'on';
+    final motorOn = _onOffFromFlag(data['motor']) == 'on';
     final progress = _dashIfNull(data['cleanProgress']);
-    _compressorState = compressor;
+    _compressorState = _requestedCompressorState ?? compressor;
     _systemMode = mode;
     _pumpState = pump == 'on' ? 'ON' : 'OFF';
     _espTime = data['time']?.toString() ?? '--:--:--';
@@ -459,7 +470,15 @@ class _HomeScreenState extends State<HomeScreen> {
         ? '$progress%'
         : (canClean ? 'Ready' : 'Blocked');
     _canClean = canClean;
-    _flowDirection = data['motor'] == 1 ? _flowDirection : FlowDirection.stop;
+    if (_requestedFlowDirection != null) {
+      _flowDirection = _requestedFlowDirection!;
+    } else {
+      _flowDirection = motorOn
+          ? (_flowDirection == FlowDirection.stop
+                ? FlowDirection.right
+                : _flowDirection)
+          : FlowDirection.stop;
+    }
   }
 
   Future<void> _getAnalytics() async {
@@ -1349,9 +1368,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _setFlowDirection(FlowDirection direction) async {
     final appState = AppScope.of(context);
+    if (_requestedFlowDirection != null) return;
+    final previousDirection = _flowDirection;
     setState(() {
       _flowDirection = direction;
+      _requestedFlowDirection = direction;
       _flowStatus = 'Sending';
+      _status = 'Feeder ${_flowLabel(direction)} sending...';
+      _hasError = false;
     });
     if (!appState.isDemo) {
       try {
@@ -1365,11 +1389,11 @@ class _HomeScreenState extends State<HomeScreen> {
         if (response.statusCode != 200) {
           throw Exception('HTTP ${response.statusCode}');
         }
-        final data = json.decode(response.body) as Map<String, dynamic>;
-        _updateSystemStatus(data);
       } catch (e) {
         if (!mounted) return;
         setState(() {
+          _flowDirection = previousDirection;
+          _requestedFlowDirection = null;
           _flowStatus = 'Failed';
           _status = 'Request error: ${e.toString()}';
           _hasError = true;
@@ -1381,8 +1405,12 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     if (!mounted) return;
     setState(() {
+      _requestedFlowDirection = null;
       _flowStatus = 'Done';
+      _status = 'Feeder ${_flowLabel(direction)} applied.';
+      _hasError = false;
     });
+    unawaited(_getState(showLoading: false, recordRefreshEvent: false));
     _addEvent(
       HistoryEvent(
         id: _newEventId(),
@@ -1398,14 +1426,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _setCompressor(bool enabled) async {
     final appState = AppScope.of(context);
+    if (_requestedCompressorState != null) return;
+    final previousState = _compressorState;
     final nextState = enabled ? 'on' : 'off';
     setState(() {
+      _compressorState = nextState;
+      _requestedCompressorState = nextState;
       _compressorStatus = 'Sending';
+      _status = 'Compressor ${enabled ? "ON" : "OFF"} sending...';
+      _hasError = false;
     });
     if (appState.isDemo) {
       setState(() {
-        _compressorState = nextState;
+        _requestedCompressorState = null;
         _compressorStatus = 'Done';
+        _status = 'Compressor ${enabled ? "ON" : "OFF"} applied.';
       });
       return;
     }
@@ -1420,14 +1455,14 @@ class _HomeScreenState extends State<HomeScreen> {
       if (response.statusCode != 200) {
         throw Exception('HTTP ${response.statusCode}');
       }
-      final data = json.decode(response.body) as Map<String, dynamic>;
       if (!mounted) return;
       setState(() {
-        _updateSystemStatus(data);
+        _requestedCompressorState = null;
         _compressorStatus = 'Done';
         _status = 'Compressor ${enabled ? "ON" : "OFF"} applied.';
         _hasError = false;
       });
+      unawaited(_getState(showLoading: false, recordRefreshEvent: false));
       _addEvent(
         HistoryEvent(
           id: _newEventId(),
@@ -1442,6 +1477,8 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
+        _compressorState = previousState;
+        _requestedCompressorState = null;
         _compressorStatus = 'Failed';
         _status = 'Request error: ${e.toString()}';
         _hasError = true;
@@ -2100,10 +2137,20 @@ class _HomeScreenState extends State<HomeScreen> {
     required bool isOnline,
   }) {
     final feederOn = _flowDirection != FlowDirection.stop;
+    final feederBusy = _requestedFlowDirection != null;
     final compressorOn = _compressorState == 'on';
-    final compressorValue = _compressorState == 'unknown'
+    final compressorBusy = _requestedCompressorState != null;
+    final compressorValue = compressorBusy
+        ? '${compressorOn ? "ON" : "OFF"} · Sending'
+        : _compressorState == 'unknown'
         ? '---'
         : (compressorOn ? 'ON' : 'OFF');
+    final lightValue = _requestedLedState == null
+        ? '${ledOn ? "ON" : "OFF"} · $requestedLedOn'
+        : '${ledOn ? "ON" : "OFF"} · Sending';
+    final feederValue = feederBusy
+        ? '${_flowLabel(_flowDirection)} · Sending'
+        : _flowLabel(_flowDirection);
 
     return InfoCard(
       padding: const EdgeInsets.all(12),
@@ -2111,18 +2158,20 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           _controlSwitchRow(
             label: 'Свет',
-            value: '${ledOn ? "ON" : "OFF"} · $requestedLedOn',
+            value: lightValue,
             icon: Icons.lightbulb_rounded,
             isOn: ledOn,
-            onChanged: _isLightingAuto ? null : (_) => _toggleLight(),
+            onChanged: _isLightingAuto || _requestedLedState != null
+                ? null
+                : (_) => _toggleLight(),
           ),
           const SizedBox(height: 10),
           _controlSwitchRow(
             label: 'Кормушка',
-            value: _flowLabel(_flowDirection),
+            value: feederValue,
             icon: Icons.restaurant_rounded,
             isOn: feederOn,
-            onChanged: isFlowEnabled && !_isLoading
+            onChanged: isFlowEnabled && !feederBusy
                 ? (enabled) => _setFlowDirection(
                     enabled ? FlowDirection.right : FlowDirection.stop,
                   )
@@ -2134,7 +2183,7 @@ class _HomeScreenState extends State<HomeScreen> {
             value: compressorValue,
             icon: Icons.air_rounded,
             isOn: compressorOn,
-            onChanged: isOnline && !_isLoading
+            onChanged: isOnline && !compressorBusy
                 ? (enabled) => _setCompressor(enabled)
                 : null,
           ),
@@ -2344,7 +2393,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final requestedLedOn = _requestedLedState == null
         ? (ledOn ? 'On' : 'Off')
         : (_requestedLedState == 'on' ? 'On' : 'Off');
-    final isFlowEnabled = isOnline && !_isLoading;
+    final isFlowEnabled = isOnline;
     final humidityValue = double.tryParse(_humidity);
     final isWaterLevelDiscrete = _isDiscreteWaterLevel(humidityValue);
     final waterLevelLabel = isWaterLevelDiscrete
