@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:aquarium_app/main.dart';
 
 void main() {
-  testWidgets('Aquarium app starts on the home screen', (tester) async {
+  testWidgets('Приложение открывает главный экран', (tester) async {
     final appState = AppState(
       themeMode: ThemeMode.light,
       isDemo: true,
@@ -19,9 +19,7 @@ void main() {
     expect(find.text('Уровень воды'), findsOneWidget);
   });
 
-  testWidgets('Aquarium open button selects tank and returns home', (
-    tester,
-  ) async {
+  testWidgets('Открытие аквариума выбирает профиль', (tester) async {
     final appState = AppState(
       themeMode: ThemeMode.light,
       isDemo: true,
@@ -32,7 +30,7 @@ void main() {
           name: 'Tropical Tank',
           espIp: '192.168.0.103',
         ),
-        AquariumProfile(id: 'reef', name: 'Reef Tank', espIp: '192.168.0.104'),
+        AquariumProfile(id: 'reef', name: 'Риф', espIp: '192.168.0.104'),
       ],
       activeAquariumId: 'reef',
     );
@@ -51,9 +49,7 @@ void main() {
     expect(find.text('Температура'), findsOneWidget);
   });
 
-  testWidgets('Aquarium settings save updates profile after dialog closes', (
-    tester,
-  ) async {
+  testWidgets('Сохранение настроек обновляет профиль', (tester) async {
     final appState = AppState(
       themeMode: ThemeMode.light,
       isDemo: true,

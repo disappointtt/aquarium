@@ -1,11 +1,8 @@
-// ignore_for_file: deprecated_member_use, unused_element, unused_field, prefer_final_fields
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -117,27 +114,18 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _hasError = false;
   bool _isLoading = false;
   bool _isLightingAuto = false;
-  String _lightingStatus = 'Idle';
   DateTime? _lastOnlineAt;
   DateTime? _lastUpdatedAt;
   AquariumPreset _preset = AquariumPreset.day;
   FlowDirection _flowDirection = FlowDirection.stop;
   FlowDirection? _requestedFlowDirection;
-  String _flowStatus = 'Idle';
   String _compressorState = 'unknown';
   String? _requestedCompressorState;
-  String _compressorStatus = 'Idle';
-  String _systemMode = '---';
-  String _pumpState = '---';
   String _espTime = '--:--:--';
-  String _timeSynced = '---';
-  String _historyInfo = '---';
   String _cleanState = '---';
   bool _canClean = false;
   String _tempSlope = '--';
   String _levelSlope = '--';
-  String _daysToLowTemp = '--';
-  String _daysToLowLevel = '--';
   final List<Reading> _history = [];
   final HistoryStore _historyStore = HistoryStore.instance;
   bool _wasOnline = false;
@@ -213,26 +201,17 @@ class _HomeScreenState extends State<HomeScreen> {
     _hasError = false;
     _isLoading = false;
     _isLightingAuto = false;
-    _lightingStatus = 'Idle';
     _lastOnlineAt = null;
     _lastUpdatedAt = null;
     _flowDirection = FlowDirection.stop;
     _requestedFlowDirection = null;
-    _flowStatus = 'Idle';
     _compressorState = 'unknown';
     _requestedCompressorState = null;
-    _compressorStatus = 'Idle';
-    _systemMode = '---';
-    _pumpState = '---';
     _espTime = '--:--:--';
-    _timeSynced = '---';
-    _historyInfo = '---';
     _cleanState = '---';
     _canClean = false;
     _tempSlope = '--';
     _levelSlope = '--';
-    _daysToLowTemp = '--';
-    _daysToLowLevel = '--';
     _history.clear();
     _wasOnline = false;
     _activeReadingRequests = 0;
@@ -300,17 +279,11 @@ class _HomeScreenState extends State<HomeScreen> {
         final demoHum = (40 + Random().nextDouble() * 30).toStringAsFixed(0);
         final demoLed = Random().nextBool() ? 'on' : 'off';
         _compressorState = Random().nextBool() ? 'on' : 'off';
-        _systemMode = 'IDLE';
-        _pumpState = 'OFF';
         _espTime = TimeOfDay.now().format(context);
-        _timeSynced = 'OK';
-        _historyInfo = '${_history.length} / 120';
         _cleanState = 'Ready';
         _canClean = true;
         _tempSlope = '0.000';
         _levelSlope = '0.000';
-        _daysToLowTemp = '--';
-        _daysToLowLevel = '--';
         _updateFromResponse(demoLed, demoTemp, demoHum, isDemo: true);
         if (recordRefreshEvent) {
           _recordRefresh(ok: true, message: 'Demo data updated');
@@ -382,7 +355,6 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _ledState = nextState;
       _requestedLedState = nextState;
-      _lightingStatus = 'Sending';
       _status = 'Light ${nextState.toUpperCase()} sending...';
       _hasError = false;
     });
@@ -391,7 +363,6 @@ class _HomeScreenState extends State<HomeScreen> {
         _status = 'Light toggled (demo mode).';
         _hasError = false;
         _requestedLedState = null;
-        _lightingStatus = 'Done';
       });
       _addEvent(
         HistoryEvent(
@@ -416,7 +387,6 @@ class _HomeScreenState extends State<HomeScreen> {
       if (response.statusCode == 200) {
         setState(() {
           _requestedLedState = null;
-          _lightingStatus = 'Done';
           _status = 'Light ${nextState.toUpperCase()} applied.';
           _hasError = false;
         });
@@ -438,7 +408,6 @@ class _HomeScreenState extends State<HomeScreen> {
           _requestedLedState = null;
           _status = 'HTTP error: ${response.statusCode}';
           _hasError = true;
-          _lightingStatus = 'Failed';
         });
         _addEvent(
           HistoryEvent(
@@ -459,7 +428,6 @@ class _HomeScreenState extends State<HomeScreen> {
         _requestedLedState = null;
         _status = 'Request error: ${e.toString()}';
         _hasError = true;
-        _lightingStatus = 'Failed';
       });
       _addEvent(
         HistoryEvent(
@@ -498,17 +466,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _updateSystemStatus(Map<String, dynamic> data) {
     final mode = data['mode']?.toString() ?? '---';
-    final pump = _onOffFromFlag(data['pump']);
     final compressor = _onOffFromFlag(data['compressor']);
     final canClean = _onOffFromFlag(data['canClean']) == 'on';
     final motorOn = _onOffFromFlag(data['motor']) == 'on';
     final progress = _dashIfNull(data['cleanProgress']);
     _compressorState = _requestedCompressorState ?? compressor;
-    _systemMode = mode;
-    _pumpState = pump == 'on' ? 'ON' : 'OFF';
     _espTime = data['time']?.toString() ?? '--:--:--';
-    _timeSynced = _onOffFromFlag(data['timeSynced']) == 'on' ? 'OK' : 'NO';
-    _historyInfo = '${data['historyCount'] ?? 0} / 120';
     _cleanState = mode == 'CLEANING'
         ? '$progress%'
         : (canClean ? 'Ready' : 'Blocked');
@@ -537,15 +500,8 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _tempSlope = _dashIfNull(data['tempSlope'], fractionDigits: 3);
         _levelSlope = _dashIfNull(data['levelSlope'], fractionDigits: 3);
-        _daysToLowTemp = _dashIfNull(data['daysToLowTemp'], fractionDigits: 1);
-        _daysToLowLevel = _dashIfNull(
-          data['daysToLowLevel'],
-          fractionDigits: 1,
-        );
       });
-    } catch (_) {
-      // Analytics is secondary; keep sensor status visible if this endpoint fails.
-    }
+    } catch (_) {}
   }
 
   void _evaluateAlerts() {
@@ -678,22 +634,12 @@ class _HomeScreenState extends State<HomeScreen> {
     return 'No response';
   }
 
-  String _formatLastOnline() {
-    final last = _lastOnlineAt;
-    if (last == null) return 'Last online: never';
-    final diff = DateTime.now().difference(last);
-    if (diff.inMinutes < 1) return 'Last online: just now';
-    if (diff.inHours < 1) return 'Last online: ${diff.inMinutes} min ago';
-    if (diff.inHours < 24) return 'Last online: ${diff.inHours} hr ago';
-    return 'Last online: ${diff.inDays} days ago';
-  }
-
   String _formatUpdatedTime() {
     final updated = _lastUpdatedAt;
-    if (updated == null) return 'Updated —';
+    if (updated == null) return 'Обновлено —';
     final hh = updated.hour.toString().padLeft(2, '0');
     final mm = updated.minute.toString().padLeft(2, '0');
-    return 'Updated $hh:$mm';
+    return 'Обновлено $hh:$mm';
   }
 
   String _formatEventTime(DateTime time) {
@@ -837,180 +783,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  String? _trendText({
-    required String currentValue,
-    required bool isTemperature,
-  }) {
-    final current = double.tryParse(currentValue);
-    if (current == null) return null;
-    if (_history.length < 2) return null;
-    final cutoff = DateTime.now().subtract(const Duration(hours: 1));
-    Reading? past;
-    for (final reading in _history) {
-      if (reading.time.isBefore(cutoff) ||
-          reading.time.isAtSameMomentAs(cutoff)) {
-        past = reading;
-        break;
-      }
-    }
-    if (past == null) return null;
-    final pastValue = double.tryParse(
-      isTemperature ? past.temperature : past.humidity,
-    );
-    if (pastValue == null) return null;
-    final diff = current - pastValue;
-    if (diff.abs() < 0.05) return '—';
-    final arrow = diff > 0 ? '▲' : '▼';
-    final formatted = isTemperature
-        ? diff.abs().toStringAsFixed(1)
-        : diff.abs().toStringAsFixed(0);
-    final unit = isTemperature ? '°C' : '%';
-    final sign = diff > 0 ? '+' : '-';
-    return '$arrow $sign$formatted$unit';
-  }
-
-  Widget _metricValueWidget({
-    required bool isLoading,
-    required bool hasData,
-    required bool isOnline,
-    required TextStyle style,
-    required String valueText,
-    required String offlineText,
-  }) {
-    if (isLoading) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            height: 16,
-            width: 90,
-            decoration: BoxDecoration(
-              color: style.color?.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Container(
-            height: 12,
-            width: 60,
-            decoration: BoxDecoration(
-              color: style.color?.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-        ],
-      );
-    }
-    if (!hasData && !isOnline) {
-      return Text(
-        offlineText,
-        style: style,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      );
-    }
-    return Text(
-      valueText,
-      style: style,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-    );
-  }
-
-  Widget _kvRow({
-    required String label,
-    required String value,
-    TextStyle? style,
-  }) {
-    final textStyle = style ?? Theme.of(context).textTheme.bodySmall;
-    return Row(
-      children: [
-        Text(
-          '$label:',
-          style: textStyle,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Text(
-            value,
-            style: textStyle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _kvSplitRow({
-    required String label,
-    required String value,
-    TextStyle? style,
-  }) {
-    final textStyle = style ?? Theme.of(context).textTheme.bodySmall;
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            '$label:',
-            style: textStyle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          value,
-          style: textStyle,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ],
-    );
-  }
-
-  Widget _statusRow(String status) {
-    final scheme = Theme.of(context).colorScheme;
-    final normalized = status.toLowerCase();
-    var icon = Icons.circle_outlined;
-    var color = scheme.onSurfaceVariant;
-    if (normalized.contains('fail')) {
-      icon = Icons.error_rounded;
-      color = Colors.red;
-    } else if (normalized.contains('send') || normalized.contains('queue')) {
-      icon = Icons.schedule_rounded;
-      color = Colors.orange;
-    } else if (normalized.contains('done') || normalized.contains('applied')) {
-      icon = Icons.check_circle_rounded;
-      color = Colors.green;
-    }
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: color),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Text(
-            status,
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: color),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _copyIp(String ip) {
-    Clipboard.setData(ClipboardData(text: ip));
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('IP copied.')));
-  }
-
   int _timeToMinutes(TimeOfDay time) => time.hour * 60 + time.minute;
 
   TimeOfDay _minutesToTime(int minutes) {
@@ -1118,7 +890,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: Colors.transparent,
                   child: Ink(
                     decoration: BoxDecoration(
-                      color: scheme.surfaceVariant.withOpacity(0.42),
+                      color: scheme.surfaceContainerHighest.withValues(
+                        alpha: 0.42,
+                      ),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: scheme.outlineVariant),
                     ),
@@ -1282,8 +1056,6 @@ class _HomeScreenState extends State<HomeScreen> {
       _flowDirection = FlowDirection.stop;
       _requestedLedState = 'off';
       _requestedFlowDirection = FlowDirection.stop;
-      _lightingStatus = 'Sending';
-      _flowStatus = 'Sending';
       _status = 'Emergency OFF sending...';
       _hasError = false;
     });
@@ -1314,8 +1086,6 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _requestedLedState = null;
           _requestedFlowDirection = null;
-          _lightingStatus = 'Failed';
-          _flowStatus = 'Failed';
           _status = 'Emergency OFF error: ${e.toString()}';
           _hasError = true;
         });
@@ -1326,8 +1096,6 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _requestedLedState = null;
         _requestedFlowDirection = null;
-        _lightingStatus = 'Done';
-        _flowStatus = 'Done';
         _status = 'Emergency OFF applied.';
         _hasError = false;
       });
@@ -1363,7 +1131,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     if (appState.isDemo) {
       setState(() {
-        _pumpState = 'ON';
         _cleanState = '0%';
         _status = 'Aquarium cleaning started (demo).';
       });
@@ -1420,7 +1187,6 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _flowDirection = direction;
       _requestedFlowDirection = direction;
-      _flowStatus = 'Sending';
       _status = 'Feeder ${_flowLabel(direction)} sending...';
       _hasError = false;
     });
@@ -1441,7 +1207,6 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _flowDirection = previousDirection;
           _requestedFlowDirection = null;
-          _flowStatus = 'Failed';
           _status = 'Request error: ${e.toString()}';
           _hasError = true;
         });
@@ -1453,7 +1218,6 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted) return;
     setState(() {
       _requestedFlowDirection = null;
-      _flowStatus = 'Done';
       _status = 'Feeder ${_flowLabel(direction)} applied.';
       _hasError = false;
     });
@@ -1479,14 +1243,12 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _compressorState = nextState;
       _requestedCompressorState = nextState;
-      _compressorStatus = 'Sending';
       _status = 'Compressor ${enabled ? "ON" : "OFF"} sending...';
       _hasError = false;
     });
     if (appState.isDemo) {
       setState(() {
         _requestedCompressorState = null;
-        _compressorStatus = 'Done';
         _status = 'Compressor ${enabled ? "ON" : "OFF"} applied.';
       });
       return;
@@ -1505,7 +1267,6 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       setState(() {
         _requestedCompressorState = null;
-        _compressorStatus = 'Done';
         _status = 'Compressor ${enabled ? "ON" : "OFF"} applied.';
         _hasError = false;
       });
@@ -1526,7 +1287,6 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _compressorState = previousState;
         _requestedCompressorState = null;
-        _compressorStatus = 'Failed';
         _status = 'Request error: ${e.toString()}';
         _hasError = true;
       });
@@ -1555,251 +1315,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  void _showErrorDetails(String message) {
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Error details'),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildErrorBanner(String message) {
-    return InfoCard(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.warning_amber_rounded, color: Colors.orange),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  message,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(color: Colors.orange),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              OutlinedButton(
-                onPressed: () => _showErrorDetails(message),
-                child: const Text('Details'),
-              ),
-              FilledButton(onPressed: _getState, child: const Text('Retry')),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _surfaceCard({required Widget child}) {
-    return InfoCard(padding: EdgeInsets.zero, child: child);
-  }
-
-  Widget _metricCard({
-    required String title,
-    required Widget value,
-    required IconData icon,
-    String? subtitle,
-    String? updated,
-    String? trend,
-    Color? accent,
-  }) {
-    final scheme = Theme.of(context).colorScheme;
-    final accentColor = accent ?? scheme.primary;
-    return _surfaceCard(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, color: accentColor),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            value,
-            if (subtitle != null) ...[
-              const SizedBox(height: 6),
-              Text(
-                subtitle,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-            if (updated != null || trend != null) ...[
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  if (updated != null)
-                    Expanded(
-                      child: Text(
-                        updated,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  if (trend != null)
-                    Text(
-                      trend,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.labelMedium?.copyWith(color: scheme.primary),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                ],
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _presetButton(AquariumPreset preset, String label, IconData icon) {
-    final scheme = Theme.of(context).colorScheme;
-    final isActive = preset == _preset;
-    final isOnline = !_hasError && _temperature != '---';
-    final subtitle = switch (preset) {
-      AquariumPreset.day => 'Light on · Feeder on',
-      AquariumPreset.night => 'Light off · Feeder off',
-      AquariumPreset.feeding => 'Light on · Feeder off',
-    };
-    final schedule = switch (preset) {
-      AquariumPreset.day => '09:00–21:00',
-      AquariumPreset.night => '21:00–09:00',
-      AquariumPreset.feeding => 'On demand',
-    };
-    return Expanded(
-      child: InkWell(
-        onTap: () {
-          _applyPreset(preset, isOnline: isOnline);
-        },
-        onLongPress: () => _editPreset(preset),
-        borderRadius: BorderRadius.circular(18),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
-          decoration: BoxDecoration(
-            color: isActive ? scheme.primary.withOpacity(0.12) : scheme.surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: isActive ? scheme.primary : scheme.outlineVariant,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    icon,
-                    color: isActive ? scheme.primary : scheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      label,
-                      style: TextStyle(
-                        color: isActive
-                            ? scheme.primary
-                            : scheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Icon(
-                    Icons.lightbulb_outline,
-                    size: 14,
-                    color: isActive ? scheme.primary : scheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 6),
-                  Icon(
-                    Icons.swap_horiz_rounded,
-                    size: 14,
-                    color: isActive ? scheme.primary : scheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      subtitle,
-                      style: TextStyle(
-                        color: scheme.onSurfaceVariant,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Schedule: $schedule',
-                style: TextStyle(
-                  color: scheme.onSurfaceVariant,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              if (!isOnline) ...[
-                const SizedBox(height: 6),
-                Text(
-                  'Will apply when online',
-                  style: TextStyle(
-                    color: scheme.onSurfaceVariant,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -1890,7 +1405,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
@@ -1935,7 +1450,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   width: 30,
                   height: 30,
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.12),
+                    color: color.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(icon, size: 18, color: color),
@@ -1983,7 +1498,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: scheme.primaryContainer.withOpacity(0.36),
+        color: scheme.primaryContainer.withValues(alpha: 0.36),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
@@ -2054,14 +1569,16 @@ class _HomeScreenState extends State<HomeScreen> {
         color: Colors.transparent,
         child: Ink(
           decoration: BoxDecoration(
-            color: isActive ? scheme.primary.withOpacity(0.12) : scheme.surface,
+            color: isActive
+                ? scheme.primary.withValues(alpha: 0.12)
+                : scheme.surface,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
               color: isActive ? scheme.primary : scheme.outlineVariant,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.05),
+                color: Colors.black.withValues(alpha: 0.05),
                 blurRadius: 16,
                 offset: const Offset(0, 8),
               ),
@@ -2081,7 +1598,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     width: 42,
                     height: 42,
                     decoration: BoxDecoration(
-                      color: accent.withOpacity(0.12),
+                      color: accent.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Icon(config.icon, color: accent, size: 22),
@@ -2179,7 +1696,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _controlPanel({
     required bool ledOn,
-    required String requestedLedOn,
     required bool isFlowEnabled,
     required bool isOnline,
   }) {
@@ -2193,7 +1709,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ? '---'
         : (compressorOn ? 'ON' : 'OFF');
     final lightValue = _requestedLedState == null
-        ? '${ledOn ? "ON" : "OFF"} · $requestedLedOn'
+        ? (ledOn ? 'ON' : 'OFF')
         : '${ledOn ? "ON" : "OFF"} · Sending';
     final feederValue = feederBusy
         ? '${_flowLabel(_flowDirection)} · Sending'
@@ -2261,7 +1777,6 @@ class _HomeScreenState extends State<HomeScreen> {
     required bool isOnline,
     required String espIp,
     required bool ledOn,
-    required String requestedLedOn,
     required bool isFlowEnabled,
     required String waterLevelLabel,
     required AquariumAlert? activeAlert,
@@ -2337,7 +1852,6 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 8),
               _controlPanel(
                 ledOn: ledOn,
-                requestedLedOn: requestedLedOn,
                 isFlowEnabled: isFlowEnabled,
                 isOnline: isOnline,
               ),
@@ -2441,9 +1955,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final isOnline = !_hasError && _temperature != '---';
     final espIp = appState.espIp;
     final ledOn = _ledState.toLowerCase() == 'on';
-    final requestedLedOn = _requestedLedState == null
-        ? (ledOn ? 'On' : 'Off')
-        : (_requestedLedState == 'on' ? 'On' : 'Off');
     final isFlowEnabled = isOnline;
     final humidityValue = double.tryParse(_humidity);
     final isWaterLevelDiscrete = _isDiscreteWaterLevel(humidityValue);
@@ -2458,7 +1969,6 @@ class _HomeScreenState extends State<HomeScreen> {
       isOnline: isOnline,
       espIp: espIp,
       ledOn: ledOn,
-      requestedLedOn: requestedLedOn,
       isFlowEnabled: isFlowEnabled,
       waterLevelLabel: waterLevelLabel,
       activeAlert: activeAlert,

@@ -20,13 +20,20 @@ class HistoryStore extends ChangeNotifier {
 
   List<HistoryEvent> getAllSorted({bool desc = true}) {
     final items = List<HistoryEvent>.from(_events);
-    items.sort((a, b) => desc ? b.time.compareTo(a.time) : a.time.compareTo(b.time));
+    items.sort(
+      (a, b) => desc ? b.time.compareTo(a.time) : a.time.compareTo(b.time),
+    );
     return items;
   }
 
-  List<HistoryEvent> filterByType(HistoryCategory category, {bool desc = true}) {
+  List<HistoryEvent> filterByType(
+    HistoryCategory category, {
+    bool desc = true,
+  }) {
     final items = _events.where((event) => event.category == category).toList();
-    items.sort((a, b) => desc ? b.time.compareTo(a.time) : a.time.compareTo(b.time));
+    items.sort(
+      (a, b) => desc ? b.time.compareTo(a.time) : a.time.compareTo(b.time),
+    );
     return items;
   }
 

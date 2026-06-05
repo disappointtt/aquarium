@@ -58,18 +58,18 @@ class HistoryEvent {
 
 String historyFilterLabel(HistoryFilter filter) {
   return switch (filter) {
-    HistoryFilter.all => 'All',
-    HistoryFilter.commands => 'Commands',
-    HistoryFilter.alerts => 'Alerts',
-    HistoryFilter.readings => 'Readings',
+    HistoryFilter.all => 'Все',
+    HistoryFilter.commands => 'Команды',
+    HistoryFilter.alerts => 'Опасности',
+    HistoryFilter.readings => 'Показания',
   };
 }
 
 String historyFilterShortLabel(HistoryFilter filter) {
   return switch (filter) {
-    HistoryFilter.all => 'All',
-    HistoryFilter.commands => 'Cmd',
-    HistoryFilter.alerts => 'Alerts',
-    HistoryFilter.readings => 'Reads',
+    HistoryFilter.all => 'Все',
+    HistoryFilter.commands => 'Ком.',
+    HistoryFilter.alerts => 'Опасн.',
+    HistoryFilter.readings => 'Данные',
   };
 }

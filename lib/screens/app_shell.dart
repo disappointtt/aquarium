@@ -50,10 +50,12 @@ class _AppShellState extends State<AppShell> {
           decoration: BoxDecoration(
             color: scheme.surface,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: scheme.outlineVariant.withOpacity(0.7)),
+            border: Border.all(
+              color: scheme.outlineVariant.withValues(alpha: 0.7),
+            ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.07),
+                color: Colors.black.withValues(alpha: 0.07),
                 blurRadius: 18,
                 offset: const Offset(0, 8),
               ),
@@ -63,7 +65,7 @@ class _AppShellState extends State<AppShell> {
             height: 66,
             selectedIndex: _index,
             backgroundColor: Colors.transparent,
-            indicatorColor: scheme.primary.withOpacity(0.12),
+            indicatorColor: scheme.primary.withValues(alpha: 0.12),
             elevation: 0,
             onDestinationSelected: (value) {
               setState(() {

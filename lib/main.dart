@@ -5,7 +5,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'screens/app_shell.dart';
 
-// Ключи для SharedPreferences
 const _kPrefThemeMode = 'theme_mode';
 const _kPrefDemoMode = 'demo_mode';
 const _kPrefEspIp = 'esp_ip';
@@ -52,7 +51,6 @@ class AquariumProfile {
   }
 }
 
-/// Глобальное состояние приложения (тема, демо-режим, профиль пользователя).
 class AppState extends ChangeNotifier {
   AppState({
     required this.themeMode,
@@ -210,10 +208,9 @@ List<AquariumProfile> _loadAquariums(String? raw, String fallbackIp) {
   }
 }
 
-/// Inherited-обёртка для доступа к AppState из любого экрана.
 class AppScope extends InheritedNotifier<AppState> {
-  const AppScope({super.key, required AppState notifier, required Widget child})
-    : super(notifier: notifier, child: child);
+  const AppScope({super.key, required AppState notifier, required super.child})
+    : super(notifier: notifier);
 
   static AppState of(BuildContext context) {
     final scope = context.dependOnInheritedWidgetOfExactType<AppScope>();
@@ -263,7 +260,6 @@ class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   ColorScheme _colorScheme(Brightness brightness) {
-    // Спокойный «водный» синий как базовый акцент.
     final seed = const Color(0xFF0E7C7B);
     return ColorScheme.fromSeed(
       seedColor: seed,
@@ -327,7 +323,7 @@ class MyApp extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide(color: scheme.primary, width: 1.6),
         ),
-        fillColor: scheme.primaryContainer.withOpacity(0.35),
+        fillColor: scheme.primaryContainer.withValues(alpha: 0.35),
         filled: true,
         labelStyle: TextStyle(color: scheme.onSurfaceVariant),
       ),
@@ -349,7 +345,7 @@ class MyApp extends StatelessWidget {
       cardTheme: CardThemeData(
         elevation: 0,
         color: scheme.surface,
-        shadowColor: Colors.black.withOpacity(0.12),
+        shadowColor: Colors.black.withValues(alpha: 0.12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
       appBarTheme: AppBarTheme(
@@ -364,9 +360,9 @@ class MyApp extends StatelessWidget {
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
-        labelTextStyle: MaterialStateProperty.resolveWith(
+        labelTextStyle: WidgetStateProperty.resolveWith(
           (states) => TextStyle(
-            fontWeight: states.contains(MaterialState.selected)
+            fontWeight: states.contains(WidgetState.selected)
                 ? FontWeight.w700
                 : FontWeight.w600,
           ),
