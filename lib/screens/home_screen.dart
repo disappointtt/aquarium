@@ -13,7 +13,6 @@ import '../data/history_store.dart';
 import '../main.dart';
 import '../models/history_models.dart';
 import '../widgets/ui_components.dart';
-import 'settings_screen.dart';
 
 class Reading {
   final DateTime time;
@@ -142,9 +141,10 @@ class _HomeScreenState extends State<HomeScreen> {
   final List<Reading> _history = [];
   final HistoryStore _historyStore = HistoryStore.instance;
   bool _wasOnline = false;
+  String? _activeAquariumKey;
   Timer? _alertRepeatTimer;
   Timer? _autoRefreshTimer;
-  bool _isRefreshingReadings = false;
+  int _activeReadingRequests = 0;
   DateTime? _lightOffSince;
   final Map<String, DateTime> _lastAlertTimes = {};
   final Map<String, AquariumAlert> _activeAlerts = {};
@@ -204,6 +204,43 @@ class _HomeScreenState extends State<HomeScreen> {
   static const Duration _autoRefreshInterval = Duration(seconds: 5);
   static const String _presetPrefsPrefix = 'preset_config';
 
+  void _resetAquariumState() {
+    _ledState = 'unknown';
+    _requestedLedState = null;
+    _temperature = '---';
+    _humidity = '---';
+    _status = 'Waiting for data. Auto refresh is starting.';
+    _hasError = false;
+    _isLoading = false;
+    _isLightingAuto = false;
+    _lightingStatus = 'Idle';
+    _lastOnlineAt = null;
+    _lastUpdatedAt = null;
+    _flowDirection = FlowDirection.stop;
+    _requestedFlowDirection = null;
+    _flowStatus = 'Idle';
+    _compressorState = 'unknown';
+    _requestedCompressorState = null;
+    _compressorStatus = 'Idle';
+    _systemMode = '---';
+    _pumpState = '---';
+    _espTime = '--:--:--';
+    _timeSynced = '---';
+    _historyInfo = '---';
+    _cleanState = '---';
+    _canClean = false;
+    _tempSlope = '--';
+    _levelSlope = '--';
+    _daysToLowTemp = '--';
+    _daysToLowLevel = '--';
+    _history.clear();
+    _wasOnline = false;
+    _activeReadingRequests = 0;
+    _lightOffSince = null;
+    _lastAlertTimes.clear();
+    _activeAlerts.clear();
+  }
+
   String _apiBase(String ip) => 'http://$ip';
 
   String _onOffFromFlag(dynamic value) {
@@ -242,10 +279,12 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _getState({
     bool showLoading = true,
     bool recordRefreshEvent = true,
+    bool allowConcurrent = false,
   }) async {
-    if (_isRefreshingReadings || !mounted) return;
-    _isRefreshingReadings = true;
-    final appState = AppScope.of(context);
+    if (!mounted) return;
+    if (_activeReadingRequests > 0 && !allowConcurrent) return;
+    _activeReadingRequests++;
+    final appState = AppScope.read(context);
     final espIp = appState.espIp;
     if (showLoading) {
       setState(() {
@@ -321,8 +360,8 @@ class _HomeScreenState extends State<HomeScreen> {
         client.close();
       }
     } finally {
-      _isRefreshingReadings = false;
-      if (mounted && showLoading && _isLoading) {
+      _activeReadingRequests = max(0, _activeReadingRequests - 1);
+      if (mounted && showLoading && _isLoading && _activeReadingRequests == 0) {
         setState(() {
           _isLoading = false;
         });
@@ -330,8 +369,12 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _refreshNow() {
+    return _getState(allowConcurrent: true);
+  }
+
   Future<void> _toggleLight() async {
-    final appState = AppScope.of(context);
+    final appState = AppScope.read(context);
     final espIp = appState.espIp;
     if (_requestedLedState != null) return;
     final previousState = _ledState;
@@ -482,9 +525,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _getAnalytics() async {
-    if (AppScope.of(context).isDemo) return;
+    if (AppScope.read(context).isDemo) return;
     try {
-      final espIp = AppScope.of(context).espIp;
+      final espIp = AppScope.read(context).espIp;
       final response = await http
           .get(Uri.parse('${_apiBase(espIp)}/analytics'))
           .timeout(const Duration(seconds: 8));
@@ -968,12 +1011,6 @@ class _HomeScreenState extends State<HomeScreen> {
     ).showSnackBar(const SnackBar(content: Text('IP copied.')));
   }
 
-  void _openSettings() {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
-  }
-
   int _timeToMinutes(TimeOfDay time) => time.hour * 60 + time.minute;
 
   TimeOfDay _minutesToTime(int minutes) {
@@ -1203,9 +1240,9 @@ class _HomeScreenState extends State<HomeScreen> {
           : 'Preset queued: ${_presetLabel(preset)}.';
       _hasError = false;
     });
-    if (isOnline && !AppScope.of(context).isDemo) {
+    if (isOnline && !AppScope.read(context).isDemo) {
       try {
-        final base = _apiBase(AppScope.of(context).espIp);
+        final base = _apiBase(AppScope.read(context).espIp);
         final lightState = config.light.isActiveNow ? 'on' : 'off';
         final compressorState = config.compressor.isActiveNow ? 'on' : 'off';
         final feederState = config.feeder.isActiveNow ? 'on' : 'off';
@@ -1238,64 +1275,74 @@ class _HomeScreenState extends State<HomeScreen> {
     return _presetConfigs[preset]?.label ?? preset.name;
   }
 
-  Future<void> _syncTime() async {
-    final appState = AppScope.of(context);
+  Future<void> _emergencyOff() async {
+    final appState = AppScope.read(context);
     setState(() {
-      _status = 'Syncing time...';
-      _hasError = false;
-    });
-    if (!appState.isDemo) {
-      try {
-        final response = await http
-            .get(Uri.parse('${_apiBase(appState.espIp)}/sync-time'))
-            .timeout(const Duration(seconds: 8));
-        if (response.statusCode != 200) {
-          throw Exception('HTTP ${response.statusCode}');
-        }
-      } catch (e) {
-        if (!mounted) return;
-        setState(() {
-          _status = 'Time sync error: ${e.toString()}';
-          _hasError = true;
-        });
-        return;
-      }
-    } else {
-      await Future<void>.delayed(const Duration(milliseconds: 600));
-    }
-    if (!mounted) return;
-    setState(() {
-      _status = 'Time synced.';
-    });
-    _addEvent(
-      HistoryEvent(
-        id: _newEventId(),
-        time: DateTime.now(),
-        title: 'Sync time',
-        message: 'Applied',
-        icon: Icons.schedule_rounded,
-        category: HistoryCategory.commands,
-        ok: true,
-      ),
-    );
-  }
-
-  void _emergencyOff({required bool isOnline}) {
-    setState(() {
+      _ledState = 'off';
       _flowDirection = FlowDirection.stop;
       _requestedLedState = 'off';
-      _lightingStatus = isOnline ? 'Sending' : 'Queued';
-      _status = isOnline ? 'Emergency OFF sent.' : 'Emergency OFF queued.';
+      _requestedFlowDirection = FlowDirection.stop;
+      _lightingStatus = 'Sending';
+      _flowStatus = 'Sending';
+      _status = 'Emergency OFF sending...';
+      _hasError = false;
     });
+
+    var ok = true;
+    var message = 'Applied';
+    if (appState.isDemo) {
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    } else {
+      try {
+        final base = _apiBase(appState.espIp);
+        final ledResponse = await http
+            .get(Uri.parse('$base/led?state=off'))
+            .timeout(const Duration(seconds: 8));
+        if (ledResponse.statusCode != 200) {
+          throw Exception('LED HTTP ${ledResponse.statusCode}');
+        }
+        final motorResponse = await http
+            .get(Uri.parse('$base/motor?state=off'))
+            .timeout(const Duration(seconds: 8));
+        if (motorResponse.statusCode != 200) {
+          throw Exception('Motor HTTP ${motorResponse.statusCode}');
+        }
+      } catch (e) {
+        ok = false;
+        message = 'Request error';
+        if (!mounted) return;
+        setState(() {
+          _requestedLedState = null;
+          _requestedFlowDirection = null;
+          _lightingStatus = 'Failed';
+          _flowStatus = 'Failed';
+          _status = 'Emergency OFF error: ${e.toString()}';
+          _hasError = true;
+        });
+      }
+    }
+
+    if (ok && mounted) {
+      setState(() {
+        _requestedLedState = null;
+        _requestedFlowDirection = null;
+        _lightingStatus = 'Done';
+        _flowStatus = 'Done';
+        _status = 'Emergency OFF applied.';
+        _hasError = false;
+      });
+      unawaited(_getState(showLoading: false, recordRefreshEvent: false));
+    }
+
     _addEvent(
       HistoryEvent(
         id: _newEventId(),
         time: DateTime.now(),
         title: 'Emergency OFF',
-        message: isOnline ? 'Sent' : 'Queued',
+        message: message,
         icon: Icons.power_settings_new_rounded,
-        category: HistoryCategory.commands,
-        ok: true,
+        category: ok ? HistoryCategory.commands : HistoryCategory.alerts,
+        ok: ok,
       ),
     );
   }
@@ -1309,7 +1356,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _startCleaning() async {
-    final appState = AppScope.of(context);
+    final appState = AppScope.read(context);
     setState(() {
       _status = 'Starting aquarium cleaning...';
       _hasError = false;
@@ -1367,7 +1414,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _setFlowDirection(FlowDirection direction) async {
-    final appState = AppScope.of(context);
+    final appState = AppScope.read(context);
     if (_requestedFlowDirection != null) return;
     final previousDirection = _flowDirection;
     setState(() {
@@ -1425,7 +1472,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _setCompressor(bool enabled) async {
-    final appState = AppScope.of(context);
+    final appState = AppScope.read(context);
     if (_requestedCompressorState != null) return;
     final previousState = _compressorState;
     final nextState = enabled ? 'on' : 'off';
@@ -2099,7 +2146,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return InfoCard(
       padding: const EdgeInsets.all(12),
       child: Text(
-        'Refresh обновляет данные с ESP. Sync time запускает синхронизацию времени ESP по Алматы. Emergency OFF выключает свет и кормушку.',
+        'Refresh обновляет данные с ESP. Emergency OFF выключает свет и кормушку.',
         style: Theme.of(
           context,
         ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
@@ -2230,12 +2277,12 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: _getState,
+          onRefresh: _refreshNow,
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             children: [
               _appHeader(
-                title: 'Tropical Tank',
+                title: appState.activeAquarium.name,
                 subtitle:
                     '${isOnline ? "Online" : "Offline"} · ${_formatUpdatedTime()}',
                 icon: Icons.water_drop_rounded,
@@ -2307,30 +2354,16 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 16),
               const SectionHeader(title: 'Быстрые команды'),
               const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: _primaryActionButton(
-                      label: 'Refresh',
-                      icon: Icons.sync_rounded,
-                      onPressed: _getState,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _primaryActionButton(
-                      label: 'Sync time',
-                      icon: Icons.schedule_rounded,
-                      onPressed: _syncTime,
-                    ),
-                  ),
-                ],
+              _primaryActionButton(
+                label: 'Refresh',
+                icon: Icons.sync_rounded,
+                onPressed: () => unawaited(_refreshNow()),
               ),
               const SizedBox(height: 8),
               _primaryActionButton(
                 label: 'Emergency OFF',
                 icon: Icons.power_settings_new_rounded,
-                onPressed: () => _emergencyOff(isOnline: isOnline),
+                onPressed: () => unawaited(_emergencyOff()),
                 danger: true,
               ),
               _quickCommandsInfo(),
@@ -2358,6 +2391,24 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final aquarium = AppScope.of(context).activeAquarium;
+    final aquariumKey = '${aquarium.id}|${aquarium.espIp}';
+    if (_activeAquariumKey == null) {
+      _activeAquariumKey = aquariumKey;
+      return;
+    }
+    if (_activeAquariumKey == aquariumKey) return;
+    _activeAquariumKey = aquariumKey;
+    _resetAquariumState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _getState(recordRefreshEvent: false);
+    });
   }
 
   @override

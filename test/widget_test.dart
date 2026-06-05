@@ -18,4 +18,64 @@ void main() {
     expect(find.text('Температура'), findsOneWidget);
     expect(find.text('Уровень воды'), findsOneWidget);
   });
+
+  testWidgets('Aquarium open button selects tank and returns home', (
+    tester,
+  ) async {
+    final appState = AppState(
+      themeMode: ThemeMode.light,
+      isDemo: true,
+      espIp: '192.168.0.103',
+      aquariums: const [
+        AquariumProfile(
+          id: 'tropical',
+          name: 'Tropical Tank',
+          espIp: '192.168.0.103',
+        ),
+        AquariumProfile(id: 'reef', name: 'Reef Tank', espIp: '192.168.0.104'),
+      ],
+      activeAquariumId: 'reef',
+    );
+
+    await tester.pumpWidget(AppScope(notifier: appState, child: const MyApp()));
+    await tester.tap(find.text('Aquarium'));
+    await tester.pump();
+
+    expect(find.text('Аквариумы'), findsOneWidget);
+
+    await tester.tap(find.text('Открыть').first);
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump();
+
+    expect(find.text('Tropical Tank'), findsOneWidget);
+    expect(find.text('Температура'), findsOneWidget);
+  });
+
+  testWidgets('Aquarium settings save updates profile after dialog closes', (
+    tester,
+  ) async {
+    final appState = AppState(
+      themeMode: ThemeMode.light,
+      isDemo: true,
+      espIp: '192.168.0.103',
+    );
+
+    await tester.pumpWidget(AppScope(notifier: appState, child: const MyApp()));
+    await tester.tap(find.text('Aquarium'));
+    await tester.pump();
+
+    await tester.tap(find.text('Настроить').first);
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Настройка аквариума'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).at(0), 'Office Tank');
+    await tester.enterText(find.byType(TextField).at(1), '10.38.25.74');
+    await tester.tap(find.text('Save'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
+
+    expect(find.text('Office Tank'), findsOneWidget);
+    expect(appState.activeAquarium.espIp, '10.38.25.74');
+  });
 }

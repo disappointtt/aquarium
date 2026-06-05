@@ -14,7 +14,6 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   int _index = 0;
-
   late final List<Widget> _pages;
 
   @override
@@ -22,7 +21,7 @@ class _AppShellState extends State<AppShell> {
     super.initState();
     _pages = [
       HomeScreen(onOpenHistory: _openHistoryTab),
-      const AquariumsScreen(),
+      AquariumsScreen(onOpenHome: _openHomeTab),
       const HistoryScreen(),
       const SettingsScreen(),
     ];
@@ -31,6 +30,12 @@ class _AppShellState extends State<AppShell> {
   void _openHistoryTab() {
     setState(() {
       _index = 2;
+    });
+  }
+
+  void _openHomeTab() {
+    setState(() {
+      _index = 0;
     });
   }
 

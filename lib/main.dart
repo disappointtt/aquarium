@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -7,18 +9,110 @@ import 'screens/app_shell.dart';
 const _kPrefThemeMode = 'theme_mode';
 const _kPrefDemoMode = 'demo_mode';
 const _kPrefEspIp = 'esp_ip';
+const _kPrefAquariums = 'aquariums';
+const _kPrefActiveAquariumId = 'active_aquarium_id';
+
+class AquariumProfile {
+  const AquariumProfile({
+    required this.id,
+    required this.name,
+    required this.espIp,
+  });
+
+  final String id;
+  final String name;
+  final String espIp;
+
+  AquariumProfile copyWith({String? name, String? espIp}) {
+    return AquariumProfile(
+      id: id,
+      name: name ?? this.name,
+      espIp: espIp ?? this.espIp,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {'id': id, 'name': name, 'espIp': espIp};
+  }
+
+  static AquariumProfile fallback(String espIp) {
+    return AquariumProfile(
+      id: 'default-aquarium',
+      name: 'Tropical Tank',
+      espIp: espIp,
+    );
+  }
+
+  static AquariumProfile? tryFromJson(Map<String, dynamic> json) {
+    final id = json['id']?.toString().trim() ?? '';
+    final name = json['name']?.toString().trim() ?? '';
+    final espIp = json['espIp']?.toString().trim() ?? '';
+    if (id.isEmpty || name.isEmpty || espIp.isEmpty) return null;
+    return AquariumProfile(id: id, name: name, espIp: espIp);
+  }
+}
 
 /// Глобальное состояние приложения (тема, демо-режим, профиль пользователя).
 class AppState extends ChangeNotifier {
   AppState({
     required this.themeMode,
     required this.isDemo,
-    required this.espIp,
-  });
+    required String espIp,
+    List<AquariumProfile>? aquariums,
+    String? activeAquariumId,
+  }) {
+    this.aquariums = _normalizeAquariums(espIp, aquariums);
+    this.activeAquariumId = _normalizeActiveId(
+      this.aquariums,
+      activeAquariumId,
+    );
+  }
 
   ThemeMode themeMode;
   bool isDemo;
-  String espIp;
+  late final List<AquariumProfile> aquariums;
+  late String activeAquariumId;
+
+  AquariumProfile get activeAquarium {
+    return aquariums.firstWhere(
+      (aquarium) => aquarium.id == activeAquariumId,
+      orElse: () => aquariums.first,
+    );
+  }
+
+  String get espIp => activeAquarium.espIp;
+
+  static List<AquariumProfile> _normalizeAquariums(
+    String fallbackIp,
+    List<AquariumProfile>? aquariums,
+  ) {
+    if (aquariums == null || aquariums.isEmpty) {
+      return [AquariumProfile.fallback(fallbackIp)];
+    }
+    return List<AquariumProfile>.from(aquariums);
+  }
+
+  static String _normalizeActiveId(
+    List<AquariumProfile> aquariums,
+    String? activeAquariumId,
+  ) {
+    final requestedId = activeAquariumId?.trim();
+    if (requestedId != null &&
+        aquariums.any((aquarium) => aquarium.id == requestedId)) {
+      return requestedId;
+    }
+    return aquariums.first.id;
+  }
+
+  Future<void> _saveAquariums() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _kPrefAquariums,
+      jsonEncode(aquariums.map((aquarium) => aquarium.toJson()).toList()),
+    );
+    await prefs.setString(_kPrefActiveAquariumId, activeAquariumId);
+    await prefs.setString(_kPrefEspIp, espIp);
+  }
 
   Future<void> setThemeMode(ThemeMode mode) async {
     themeMode = mode;
@@ -35,10 +129,84 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> setEspIp(String ip) async {
-    espIp = ip;
+    final index = aquariums.indexWhere(
+      (aquarium) => aquarium.id == activeAquariumId,
+    );
+    if (index == -1) return;
+    aquariums[index] = aquariums[index].copyWith(espIp: ip);
     notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    prefs.setString(_kPrefEspIp, ip);
+    await _saveAquariums();
+  }
+
+  Future<void> selectAquarium(String id) async {
+    if (!aquariums.any((aquarium) => aquarium.id == id)) return;
+    if (activeAquariumId == id) return;
+    activeAquariumId = id;
+    notifyListeners();
+    await _saveAquariums();
+  }
+
+  Future<String> addAquarium({
+    required String name,
+    required String espIp,
+  }) async {
+    final aquarium = AquariumProfile(
+      id: 'aquarium-${DateTime.now().microsecondsSinceEpoch}',
+      name: name.trim().isEmpty ? 'Новый аквариум' : name.trim(),
+      espIp: espIp.trim().isEmpty ? '192.168.0.105' : espIp.trim(),
+    );
+    aquariums.add(aquarium);
+    activeAquariumId = aquarium.id;
+    notifyListeners();
+    await _saveAquariums();
+    return aquarium.id;
+  }
+
+  Future<void> updateAquarium({
+    required String id,
+    required String name,
+    required String espIp,
+  }) async {
+    final index = aquariums.indexWhere((aquarium) => aquarium.id == id);
+    if (index == -1) return;
+    aquariums[index] = aquariums[index].copyWith(
+      name: name.trim().isEmpty ? aquariums[index].name : name.trim(),
+      espIp: espIp.trim().isEmpty ? aquariums[index].espIp : espIp.trim(),
+    );
+    notifyListeners();
+    await _saveAquariums();
+  }
+
+  Future<void> removeAquarium(String id) async {
+    if (aquariums.length <= 1) return;
+    aquariums.removeWhere((aquarium) => aquarium.id == id);
+    if (!aquariums.any((aquarium) => aquarium.id == activeAquariumId)) {
+      activeAquariumId = aquariums.first.id;
+    }
+    notifyListeners();
+    await _saveAquariums();
+  }
+}
+
+List<AquariumProfile> _loadAquariums(String? raw, String fallbackIp) {
+  if (raw == null || raw.trim().isEmpty) {
+    return [AquariumProfile.fallback(fallbackIp)];
+  }
+  try {
+    final decoded = jsonDecode(raw);
+    if (decoded is! List) return [AquariumProfile.fallback(fallbackIp)];
+    final aquariums = <AquariumProfile>[];
+    for (final item in decoded) {
+      if (item is Map<String, dynamic>) {
+        final aquarium = AquariumProfile.tryFromJson(item);
+        if (aquarium != null) aquariums.add(aquarium);
+      }
+    }
+    return aquariums.isEmpty
+        ? [AquariumProfile.fallback(fallbackIp)]
+        : aquariums;
+  } catch (_) {
+    return [AquariumProfile.fallback(fallbackIp)];
   }
 }
 
@@ -49,6 +217,13 @@ class AppScope extends InheritedNotifier<AppState> {
 
   static AppState of(BuildContext context) {
     final scope = context.dependOnInheritedWidgetOfExactType<AppScope>();
+    assert(scope != null, 'AppScope not found in context');
+    return scope!.notifier!;
+  }
+
+  static AppState read(BuildContext context) {
+    final element = context.getElementForInheritedWidgetOfExactType<AppScope>();
+    final scope = element?.widget as AppScope?;
     assert(scope != null, 'AppScope not found in context');
     return scope!.notifier!;
   }
@@ -64,6 +239,8 @@ Future<void> main() async {
   final themeName = prefs.getString(_kPrefThemeMode);
   final bool demo = prefs.getBool(_kPrefDemoMode) ?? false;
   final espIp = prefs.getString(_kPrefEspIp) ?? '192.168.0.105';
+  final aquariums = _loadAquariums(prefs.getString(_kPrefAquariums), espIp);
+  final activeAquariumId = prefs.getString(_kPrefActiveAquariumId);
 
   final themeMode = switch (themeName) {
     'dark' => ThemeMode.dark,
@@ -71,7 +248,13 @@ Future<void> main() async {
     _ => ThemeMode.system,
   };
 
-  final appState = AppState(themeMode: themeMode, isDemo: demo, espIp: espIp);
+  final appState = AppState(
+    themeMode: themeMode,
+    isDemo: demo,
+    espIp: espIp,
+    aquariums: aquariums,
+    activeAquariumId: activeAquariumId,
+  );
 
   runApp(AppScope(notifier: appState, child: const MyApp()));
 }
@@ -194,7 +377,7 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final appState = AppScope.of(context);
+    final appState = AppScope.read(context);
     return AnimatedBuilder(
       animation: appState,
       builder: (context, _) {

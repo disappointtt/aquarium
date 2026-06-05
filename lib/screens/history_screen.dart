@@ -1,7 +1,4 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../data/history_store.dart';
 import '../models/history_models.dart';
@@ -104,82 +101,41 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
-  void _exportEvents({required bool asJson}) {
-    final items = _filteredEvents().map((e) {
-      final snapshot = e.snapshot;
-      final lightingMode = snapshot?.lightingMode;
-      final flowDirection = snapshot?.flowDirection;
-      final connectionState = snapshot?.connectionState;
-      return {
-        'id': e.id,
-        'time': e.time.toIso8601String(),
-        'title': e.title,
-        'message': e.message ?? '',
-        'category': e.category.name,
-        'result': e.ok ? 'OK' : 'Fail',
-        'temperature': snapshot?.temperature,
-        'temperatureUnit': snapshot?.temperatureUnit,
-        'waterLevelPercent': snapshot?.waterLevelPercent,
-        'lightingRequested': snapshot?.lightingRequested,
-        'lightingActual': snapshot?.lightingActual,
-        'lightingMode': lightingMode?.name,
-        'flowDirection': flowDirection?.name,
-        'connectionState': connectionState?.name,
-        'lastSeen': snapshot?.lastSeen?.toIso8601String(),
-      };
-    }).toList();
-    if (asJson) {
-      final payload = jsonEncode(items);
-      Clipboard.setData(ClipboardData(text: payload));
-    } else {
-      final rows = [
-        'id,time,title,message,category,result,temperature,temperatureUnit,waterLevelPercent,lightingRequested,lightingActual,lightingMode,flowDirection,connectionState,lastSeen',
-        ...items.map(
-          (e) =>
-              '"${e['id'] ?? ''}","${e['time'] ?? ''}","${e['title'] ?? ''}","${e['message'] ?? ''}","${e['category'] ?? ''}","${e['result'] ?? ''}","${e['temperature'] ?? ''}","${e['temperatureUnit'] ?? ''}","${e['waterLevelPercent'] ?? ''}","${e['lightingRequested'] ?? ''}","${e['lightingActual'] ?? ''}","${e['lightingMode'] ?? ''}","${e['flowDirection'] ?? ''}","${e['connectionState'] ?? ''}","${e['lastSeen'] ?? ''}"',
-        ),
-      ];
-      Clipboard.setData(ClipboardData(text: rows.join('\n')));
-    }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Exported ${asJson ? 'JSON' : 'CSV'} to clipboard.'),
-      ),
-    );
-  }
-
-  void _showExportDialog() {
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Export'),
-        content: const Text('Copy events to clipboard.'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _exportEvents(asJson: true);
-            },
-            child: const Text('JSON'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _exportEvents(asJson: false);
-            },
-            child: const Text('CSV'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _eventTile(HistoryEvent event) {
     return HistoryItemTile(event: event, subtitle: _eventSubtitle(event));
+  }
+
+  String _filterLabel(HistoryFilter filter) {
+    return switch (filter) {
+      HistoryFilter.all => 'Все',
+      HistoryFilter.commands => 'Команды',
+      HistoryFilter.alerts => 'Опасности',
+      HistoryFilter.readings => 'Показания',
+    };
+  }
+
+  String _sortLabel(HistorySort sort) {
+    return switch (sort) {
+      HistorySort.desc => 'Новые',
+      HistorySort.asc => 'Старые',
+    };
+  }
+
+  ButtonStyle _segmentStyle(BuildContext context) {
+    return ButtonStyle(
+      minimumSize: const WidgetStatePropertyAll(Size.fromHeight(42)),
+      padding: const WidgetStatePropertyAll(
+        EdgeInsets.symmetric(horizontal: 8),
+      ),
+      textStyle: WidgetStatePropertyAll(
+        Theme.of(
+              context,
+            ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w800) ??
+            const TextStyle(fontWeight: FontWeight.w800),
+      ),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
+    );
   }
 
   Widget _header(BuildContext context) {
@@ -208,7 +164,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 ),
               ),
               Text(
-                'Команды, показания и алерты',
+                'Команды, показания и опасности',
                 style: Theme.of(
                   context,
                 ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
@@ -216,15 +172,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 overflow: TextOverflow.ellipsis,
               ),
             ],
-          ),
-        ),
-        OutlinedButton.icon(
-          onPressed: _showExportDialog,
-          icon: const Icon(Icons.download_rounded, size: 18),
-          label: const Text(
-            'Export',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],
@@ -250,18 +197,20 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
+                    SizedBox(
+                      width: double.infinity,
                       child: SegmentedButton<HistoryFilter>(
+                        style: _segmentStyle(context),
                         showSelectedIcon: false,
                         segments: HistoryFilter.values
                             .map(
                               (filter) => ButtonSegment(
                                 value: filter,
                                 label: Text(
-                                  historyFilterShortLabel(filter),
+                                  _filterLabel(filter),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
                                 ),
                               ),
                             )
@@ -274,59 +223,42 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         },
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Text(
-                          'Sort',
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(color: scheme.onSurfaceVariant),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(width: 12),
-                        SegmentedButton<HistorySort>(
-                          style: ButtonStyle(
-                            fixedSize: const MaterialStatePropertyAll(
-                              Size(72, 32),
-                            ),
-                            padding: const MaterialStatePropertyAll(
-                              EdgeInsets.symmetric(horizontal: 0),
-                            ),
-                            textStyle: MaterialStatePropertyAll(
-                              Theme.of(context).textTheme.labelMedium ??
-                                  const TextStyle(),
-                            ),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            visualDensity: VisualDensity.compact,
-                          ),
-                          showSelectedIcon: false,
-                          segments: const [
-                            ButtonSegment(
-                              value: HistorySort.desc,
-                              label: Text(
-                                'DESC',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                    const SizedBox(height: 10),
+                    Text(
+                      'Сортировка',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 6),
+                    SizedBox(
+                      width: double.infinity,
+                      child: SegmentedButton<HistorySort>(
+                        style: _segmentStyle(context),
+                        showSelectedIcon: false,
+                        segments: HistorySort.values
+                            .map(
+                              (sort) => ButtonSegment(
+                                value: sort,
+                                label: Text(
+                                  _sortLabel(sort),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
+                                ),
                               ),
-                            ),
-                            ButtonSegment(
-                              value: HistorySort.asc,
-                              label: Text(
-                                'ASC',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                          selected: {_historySort},
-                          onSelectionChanged: (selection) {
-                            setState(() {
-                              _historySort = selection.first;
-                            });
-                          },
-                        ),
-                      ],
+                            )
+                            .toList(),
+                        selected: {_historySort},
+                        onSelectionChanged: (selection) {
+                          setState(() {
+                            _historySort = selection.first;
+                          });
+                        },
+                      ),
                     ),
                   ],
                 ),
